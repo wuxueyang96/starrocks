@@ -44,6 +44,7 @@
 #include "storage/rowset/common.h"
 #include "storage/rowset/indexed_column_reader.h"
 #include "util/once.h"
+#include "util/suffix_automaton.h"
 
 namespace starrocks {
 
@@ -103,6 +104,7 @@ private:
     TypeInfoPtr _typeinfo;
     std::unique_ptr<IndexedColumnReader> _dict_column_reader;
     std::unique_ptr<IndexedColumnReader> _bitmap_column_reader;
+    std::unique_ptr<SuffixAutomaton> _sam = nullptr;
     bool _has_null = false;
 };
 
@@ -129,6 +131,8 @@ public:
     // Returns NotFound when no such value exists (all values in dictionary < `value`).
     // Returns other error status otherwise.
     Status seek_dictionary(const void* value, bool* exact_match);
+
+    Status seek_dictionary_by_sam(const Slice* value, roaring::Roaring* roaring) const;
 
     StatusOr<Buffer<rowid_t>> seek_dictionary_by_predicate(const DictPredicate& predicate, const Slice& from_value, size_t search_size);
 

@@ -421,6 +421,7 @@ set(EXEC_FILES
         ./util/jvm_metrics_test.cpp
         ./util/llm_cache_test.cpp
         ./util/llm_query_service_test.cpp
+        ./util/suffix_automaton_test.cpp
         )
 
 if (${USE_AVX512})

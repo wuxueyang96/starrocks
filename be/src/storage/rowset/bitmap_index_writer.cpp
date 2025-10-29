@@ -51,6 +51,7 @@
 #include "util/phmap/btree.h"
 #include "util/phmap/phmap.h"
 #include "util/slice.h"
+#include "util/suffix_automaton.h"
 #include "util/xxh3.h"
 
 namespace starrocks {
@@ -61,8 +62,12 @@ class BitmapUpdateContext {
     static const size_t estimate_size_threshold = 1024;
 
 public:
-    explicit BitmapUpdateContext(rowid_t rid) : _roaring(Roaring::bitmapOf(1, rid)){ _pending_adds.reserve(_ADD_BATCH_SIZE); };
-    explicit BitmapUpdateContext(rowid_t rid0, rowid_t rid1) : _roaring(Roaring::bitmapOfList({rid0, rid1})){ _pending_adds.reserve(_ADD_BATCH_SIZE); };
+    explicit BitmapUpdateContext(rowid_t rid) : _roaring(Roaring::bitmapOf(1, rid)) {
+        _pending_adds.reserve(_ADD_BATCH_SIZE);
+    };
+    explicit BitmapUpdateContext(rowid_t rid0, rowid_t rid1) : _roaring(Roaring::bitmapOfList({rid0, rid1})) {
+        _pending_adds.reserve(_ADD_BATCH_SIZE);
+    };
 
     Roaring* roaring() { return &_roaring; }
 
@@ -213,7 +218,8 @@ struct BitmapIndexTraits {
 
 template <>
 struct BitmapIndexTraits<Slice> {
-    using UnorderedMemoryIndexType = phmap::flat_hash_map<Slice, BitmapUpdateContextRefOrSingleValue, BitmapIndexSliceHash, std::equal_to<Slice>>;
+    using UnorderedMemoryIndexType = phmap::flat_hash_map<Slice, BitmapUpdateContextRefOrSingleValue,
+                                                          BitmapIndexSliceHash, std::equal_to<Slice>>;
     using OrderedMemoryIndexType = std::map<Slice, BitmapUpdateContextRefOrSingleValue, Slice::Comparator>;
 };
 
@@ -237,7 +243,11 @@ public:
     using UnorderedMemoryIndexType = typename BitmapIndexTraits<CppType>::UnorderedMemoryIndexType;
     using OrderedMemoryIndexType = typename BitmapIndexTraits<CppType>::OrderedMemoryIndexType;
 
-    explicit BitmapIndexWriterImpl(TypeInfoPtr type_info) : _typeinfo(std::move(type_info)) {}
+    explicit BitmapIndexWriterImpl(TypeInfoPtr type_info) : _typeinfo(std::move(type_info)) {
+        if constexpr (field_type == TYPE_VARCHAR || field_type == TYPE_CHAR) {
+            _sam = SuffixAutomaton();
+        }
+    }
 
     ~BitmapIndexWriterImpl() override = default;
 
@@ -297,8 +307,16 @@ public:
 
             IndexedColumnWriter dict_column_writer(options, _typeinfo, wfile);
             RETURN_IF_ERROR(dict_column_writer.init());
+            int32_t string_idx = 0;
             for (auto const& it : ordered_mem_index) {
                 RETURN_IF_ERROR(dict_column_writer.add(&(it.first)));
+                if constexpr (field_type == TYPE_VARCHAR || field_type == TYPE_CHAR) {
+                    if (!_sam.has_value()) {
+                        LOG(WARNING) << "No SuffixAutomaton found.";
+                        return Status::InternalError("No SuffixAutomaton found.");
+                    }
+                    RETURN_IF_ERROR(_sam->extend(&it.first, string_idx++));
+                }
             }
             RETURN_IF_ERROR(dict_column_writer.finish(meta->mutable_dict_column()));
         }
@@ -359,6 +377,11 @@ public:
             }
             RETURN_IF_ERROR(bitmap_column_writer.finish(meta->mutable_bitmap_column()));
         }
+        if (_sam.has_value()) {
+            RETURN_IF_ERROR(_sam->build_parent_tree());
+            LOG(INFO) << "Suffix Automaton memory usage: " << _sam->memory_usage() << " bytes.";
+            RETURN_IF_ERROR(_sam->persist(meta->mutable_suffix_automaton()));
+        }
         return Status::OK();
     }
 
@@ -388,6 +411,7 @@ private:
     // Use UnorderedMemoryIndexType during loading and sort it when finish is more efficient than only
     // use OrderedMemoryIndexType. Especially for the case of built-in inverted index workload.
     UnorderedMemoryIndexType _mem_index;
+    std::optional<SuffixAutomaton> _sam{};
     MemPool _pool;
 
     // roaring bitmap size

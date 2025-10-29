@@ -64,6 +64,9 @@ Status BuiltinInvertedIndexIterator::_equal_query(const Slice* search_query, roa
 }
 
 Status BuiltinInvertedIndexIterator::_wildcard_query(const Slice* search_query, roaring::Roaring* bit_map) {
+
+
+
     auto first_wildcard_pos = search_query->to_string().find('%');
     if (first_wildcard_pos == std::string::npos) {
         return Status::InternalError("invalid wildcard query for builtin inverted index");

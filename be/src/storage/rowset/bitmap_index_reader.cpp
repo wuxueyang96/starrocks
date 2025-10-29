@@ -86,6 +86,10 @@ Status BitmapIndexReader::_do_load(const IndexReadOptions& opts, const BitmapInd
     _has_null = meta.has_null();
     _dict_column_reader = std::make_unique<IndexedColumnReader>(dict_meta);
     _bitmap_column_reader = std::make_unique<IndexedColumnReader>(bitmap_meta);
+    if (meta.has_suffix_automaton()) {
+        _sam = std::make_unique<SuffixAutomaton>();
+        RETURN_IF_ERROR(_sam->load(meta.suffix_automaton()));
+    }
     RETURN_IF_ERROR(_dict_column_reader->load(opts));
     RETURN_IF_ERROR(_bitmap_column_reader->load(opts));
     return Status::OK();
@@ -110,6 +114,13 @@ Status BitmapIndexIterator::next_batch_dictionary(size_t* n, Column* column) {
     RETURN_IF_ERROR(_dict_column_iter->next_batch(n, column));
     _current_rowid += *n;
     return Status::OK();
+}
+
+Status BitmapIndexIterator::seek_dictionary_by_sam(const Slice* slice, roaring::Roaring* roaring) const {
+    if (_reader->_sam == nullptr) {
+        return Status::NotFound("suffix automaton not found");
+    }
+    return _reader->_sam->query(slice, roaring);
 }
 
 StatusOr<Buffer<rowid_t>> BitmapIndexIterator::seek_dictionary_by_predicate(const DictPredicate& predicate,

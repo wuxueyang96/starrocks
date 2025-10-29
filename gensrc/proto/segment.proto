@@ -40,6 +40,7 @@ option java_package = "com.starrocks.proto";
 
 import "olap_common.proto";
 import "types.proto";
+import "suffix_automaton.proto";
 
 message MetadataPairPB {
     optional string key = 1;
@@ -289,6 +290,8 @@ message BitmapIndexPB {
     optional IndexedColumnMetaPB dict_column = 3;
     // required: meta for bitmaps part
     optional IndexedColumnMetaPB bitmap_column = 4;
+    // optional: only used for inverted index
+    optional SuffixAutomatonPB suffix_automaton = 5;
 }
 
 enum HashStrategyPB {
