@@ -271,29 +271,6 @@ Status BitmapIndexIterator::next_batch_dictionary(size_t* n, Column* column) {
     return Status::OK();
 }
 
-StatusOr<Buffer<rowid_t>> BitmapIndexIterator::seek_dictionary_by_predicate(const DictPredicate& predicate,
-                                                                            const Slice& from_value,
-                                                                            size_t search_size) {
-    if (_reader->type_info()->type() != TYPE_VARCHAR && _reader->type_info()->type() != TYPE_CHAR) {
-        return Status::NotSupported("predicate seek for dictionary only support string/char type bitmap index");
-    }
-    auto column = ChunkHelper::column_from_field_type(TYPE_VARCHAR, false);
-    bool exact_match;
-    RETURN_IF_ERROR(seek_dictionary(&from_value, &exact_match));
-    size_t beg_rowid = _current_rowid;
-    RETURN_IF_ERROR(next_batch_dictionary(&search_size, column.get()));
-    ASSIGN_OR_RETURN(auto ret, predicate(*column));
-
-    auto hit_column = down_cast<BooleanColumn*>(ret.get());
-    Buffer<rowid_t> hit_rowids;
-    for (int i = 0; i < hit_column->size(); ++i) {
-        if (hit_column->get_data()[i]) {
-            hit_rowids.push_back(beg_rowid + i);
-        }
-    }
-    return hit_rowids;
-}
-
 Status BitmapIndexIterator::read_bitmap(rowid_t ordinal, Roaring* result) {
     DCHECK(0 <= ordinal && ordinal < _reader->bitmap_nums());
 

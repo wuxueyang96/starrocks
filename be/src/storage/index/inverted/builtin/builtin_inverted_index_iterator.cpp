@@ -241,7 +241,7 @@ Status BuiltinInvertedIndexIterator::read_from_inverted_index(const std::string&
 }
 
 Status BuiltinInvertedIndexIterator::read_null(const std::string& column_name, roaring::Roaring* bit_map) {
-    return Status::InternalError("Unsupported");
+    return Status::OK();
 }
 
 } // namespace starrocks
