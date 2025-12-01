@@ -192,6 +192,86 @@ Status BuiltinInvertedIndexIterator::_wildcard_query(const Slice* search_query, 
     return _bitmap_itr->read_union_bitmap(hit_rowids, bit_map);
 }
 
+Status BuiltinInvertedIndexIterator::_phrase_query(const Slice* search_query, roaring::Roaring* bit_map) {
+    std::istringstream iss(search_query->to_string());
+
+    // row_id -> dict_id -> positions
+    phmap::flat_hash_map<rowid_t, phmap::flat_hash_map<rowid_t, roaring::Roaring>> positions;
+    Buffer<rowid_t> dict_ids;
+
+    roaring::Roaring filtered_rows;
+    filtered_rows.addRange(0, _bitmap_itr->bitmap_nums());
+
+    std::string cur_predicate;
+    while (iss >> cur_predicate) {
+        LOG(INFO) << "match_phrase: filter for " << cur_predicate;
+        Slice s(cur_predicate);
+
+        bool exact_match = true;
+        Status st = _bitmap_itr->seek_dictionary(&s, &exact_match);
+
+        detail::Roaring64Map roaring;
+        if (st.ok() && exact_match) {
+            rowid_t ordinal = _bitmap_itr->current_ordinal();
+            LOG(INFO) << "match_phrase: found at ordinal: " << ordinal;
+
+            RETURN_IF_ERROR(_bitmap_itr->read_bitmap64(ordinal, &roaring));
+
+            roaring::Roaring rows = roaring.getAllHighBits();
+
+            filtered_rows &= rows;
+            if (filtered_rows.cardinality() <= 0) {
+                bit_map->clear();
+                return Status::OK();
+            }
+
+            for (const auto& row : rows) {
+                LOG(INFO) << "match_phrase: processing row: " << row;
+                auto it = positions.find(row);
+
+                roaring::Roaring position_list = roaring.getLowBitsRoaring(row);
+                if (it == positions.end()) {
+                    phmap::flat_hash_map<rowid_t, roaring::Roaring> dict_to_position_list;
+                    dict_to_position_list.emplace(ordinal, position_list);
+                    const auto& [_, inserted] = positions.emplace(row, dict_to_position_list);
+                    LOG(INFO) << "match_phrase: add row " << row << " success? " << inserted;
+                } else {
+                    const auto& [_, inserted] = it->second.emplace(ordinal, position_list);
+                    LOG(INFO) << "match_phrase: add row " << row << " success? " << inserted;
+                }
+            }
+
+            dict_ids.emplace_back(ordinal);
+        } else if (st.is_not_found()) {
+            bit_map->clear();
+            return Status::OK();
+        } else {
+            return st;
+        }
+    }
+
+    for (const rowid_t& row : filtered_rows) {
+        LOG(INFO) << "match_phrase: final processing row: " << row;
+        for (auto dict_to_position_list = positions.at(row); const rowid_t start : dict_to_position_list[dict_ids[0]]) {
+            LOG(INFO) << "match_phrase: start position: " << start;
+            bool found = true;
+            for (size_t offset = 1; offset < dict_ids.size(); ++offset) {
+                if (const auto& position_list = dict_to_position_list.at(dict_ids[offset]);
+                    !position_list.contains(start + offset)) {
+                    found = false;
+                    break;
+                }
+            }
+            if (found) {
+                LOG(INFO) << "match_phrase: found row: " << row;
+                bit_map->add(row);
+                break;
+            }
+        }
+    }
+    return Status::OK();
+}
+
 Status BuiltinInvertedIndexIterator::read_from_inverted_index(const std::string& column_name, const void* query_value,
                                                               InvertedIndexQueryType query_type,
                                                               roaring::Roaring* bit_map) {
@@ -203,6 +283,10 @@ Status BuiltinInvertedIndexIterator::read_from_inverted_index(const std::string&
     }
     case InvertedIndexQueryType::MATCH_WILDCARD_QUERY: {
         RETURN_IF_ERROR(_wildcard_query(search_query, bit_map));
+        break;
+    }
+    case InvertedIndexQueryType::MATCH_PHRASE_QUERY: {
+        RETURN_IF_ERROR(_phrase_query(search_query, bit_map));
         break;
     }
     case InvertedIndexQueryType::MATCH_ALL_QUERY:

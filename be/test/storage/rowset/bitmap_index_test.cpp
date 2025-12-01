@@ -378,6 +378,77 @@ TEST_F(BitmapIndexTest, test_dict_ngram_index) {
                 ASSERT_EQ(num_keywords, r1.cardinality());
             }
         }
+
+        delete reader;
+        delete iter;
+    }
+}
+
+TEST_F(BitmapIndexTest, test_with_position) {
+    // Test BitmapIndexWriter with position tracking enabled
+    // When position is enabled, each value is stored as (rowid << 32 | position)
+    const TypeInfoPtr type_info = get_type_info(TYPE_VARCHAR);
+    const std::string file_name = kTestDir + "/with_position";
+
+    // Create test data: multiple values per row
+    std::vector<std::vector<std::string>> rows{
+            {"hello", "world", "test"},
+            {"hello", "foo", "bar"},
+            {"world", "test"},
+    };
+
+    ColumnIndexMetaPB meta;
+    {
+        ASSIGN_OR_ABORT(auto wfile, _fs->new_writable_file(file_name));
+
+        std::unique_ptr<BitmapIndexWriter> writer;
+        // Create writer with position tracking (gram_num=-1, with_position=true)
+        BitmapIndexWriter::create(type_info, &writer, -1, true);
+
+        for (const auto& row : rows) {
+            for (const auto& val : row) {
+                Slice slice(val);
+                writer->add_value_with_current_rowid(&slice);
+            }
+            writer->incre_rowid();
+        }
+
+        ASSERT_TRUE(writer->finish(wfile.get(), &meta).ok());
+        ASSERT_EQ(BITMAP_INDEX, meta.type());
+        ASSERT_TRUE(wfile->close().ok());
+    }
+
+    {
+        BitmapIndexReader* reader = nullptr;
+        BitmapIndexIterator* iter = nullptr;
+        ASSIGN_OR_ABORT(auto rfile, _fs->new_random_access_file(file_name));
+        get_bitmap_reader_iter(rfile.get(), meta, &reader, &iter);
+
+        // Verify the dictionary contains unique values
+        ASSERT_EQ(5, reader->bitmap_nums()); // bar, foo, hello, test, world (sorted)
+
+        for (int row_id = 0; row_id < rows.size(); ++row_id) {
+            for (int pos_idx = 0; pos_idx < rows[row_id].size(); ++pos_idx) {
+                Slice slice(rows[row_id][pos_idx]);
+
+                bool exact_match;
+                auto st = iter->seek_dictionary(&slice, &exact_match);
+
+                ASSERT_TRUE(st.ok());
+                ASSERT_TRUE(exact_match);
+
+                detail::Roaring64Map bitmap;
+                iter->read_bitmap64(iter->current_ordinal(), &bitmap);
+
+                roaring::Roaring row_ids = bitmap.getAllHighBits();
+                ASSERT_TRUE(row_ids.contains(row_id));
+                roaring::Roaring positions = bitmap.getLowBitsRoaring(row_id);
+                ASSERT_TRUE(positions.contains(pos_idx));
+            }
+        }
+
+        delete reader;
+        delete iter;
     }
 }
 

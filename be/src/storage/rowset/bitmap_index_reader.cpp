@@ -41,8 +41,6 @@
 #include "bitmap_range_iterator.h"
 #include "column/column_helper.h"
 #include "column/column_viewer.h"
-#include "exprs/function_context.h"
-#include "exprs/like_predicate.h"
 #include "runtime/exec_env.h"
 #include "storage/chunk_helper.h"
 #include "storage/range.h"
@@ -53,7 +51,8 @@ namespace starrocks {
 
 using Roaring = roaring::Roaring;
 
-BitmapIndexReader::BitmapIndexReader(int32_t gram_num) : _gram_num(gram_num) {
+BitmapIndexReader::BitmapIndexReader(int32_t gram_num, bool with_position)
+        : _gram_num(gram_num), _with_position(with_position) {
     MEM_TRACKER_SAFE_CONSUME(GlobalEnv::GetInstance()->bitmap_index_mem_tracker(), sizeof(BitmapIndexReader));
 }
 
@@ -271,29 +270,6 @@ Status BitmapIndexIterator::next_batch_dictionary(size_t* n, Column* column) {
     return Status::OK();
 }
 
-StatusOr<Buffer<rowid_t>> BitmapIndexIterator::seek_dictionary_by_predicate(const DictPredicate& predicate,
-                                                                            const Slice& from_value,
-                                                                            size_t search_size) {
-    if (_reader->type_info()->type() != TYPE_VARCHAR && _reader->type_info()->type() != TYPE_CHAR) {
-        return Status::NotSupported("predicate seek for dictionary only support string/char type bitmap index");
-    }
-    auto column = ChunkHelper::column_from_field_type(TYPE_VARCHAR, false);
-    bool exact_match;
-    RETURN_IF_ERROR(seek_dictionary(&from_value, &exact_match));
-    size_t beg_rowid = _current_rowid;
-    RETURN_IF_ERROR(next_batch_dictionary(&search_size, column.get()));
-    ASSIGN_OR_RETURN(auto ret, predicate(*column));
-
-    auto hit_column = down_cast<BooleanColumn*>(ret.get());
-    Buffer<rowid_t> hit_rowids;
-    for (int i = 0; i < hit_column->size(); ++i) {
-        if (hit_column->get_data()[i]) {
-            hit_rowids.push_back(beg_rowid + i);
-        }
-    }
-    return hit_rowids;
-}
-
 Status BitmapIndexIterator::read_bitmap(rowid_t ordinal, Roaring* result) {
     DCHECK(0 <= ordinal && ordinal < _reader->bitmap_nums());
 
@@ -307,7 +283,32 @@ Status BitmapIndexIterator::read_bitmap(rowid_t ordinal, Roaring* result) {
     ColumnViewer<TYPE_VARCHAR> viewer(std::move(column));
     auto value = viewer.value(0);
 
-    *result = Roaring::read(value.data, false);
+    if (!_reader->with_position()) {
+        *result = Roaring::read(value.data, false);
+    } else {
+        const auto tmp = detail::Roaring64Map::read(value.data);
+        *result = tmp.getAllHighBits();
+    }
+    return Status::OK();
+}
+
+Status BitmapIndexIterator::read_bitmap64(rowid_t ordinal, detail::Roaring64Map* result) const {
+    DCHECK(0 <= ordinal && ordinal < _reader->bitmap_nums());
+    if (!_reader->with_position()) {
+        return Status::InvalidArgument("with_position is false, can't read bitmap64");
+    }
+
+    auto column = ChunkHelper::column_from_field_type(TYPE_VARCHAR, false);
+    RETURN_IF_ERROR(_bitmap_column_iter->seek_to_ordinal(ordinal));
+    size_t num_to_read = 1;
+    size_t num_read = num_to_read;
+    RETURN_IF_ERROR(_bitmap_column_iter->next_batch(&num_read, column.get()));
+    DCHECK(num_to_read == num_read);
+
+    ColumnViewer<TYPE_VARCHAR> viewer(std::move(column));
+    auto value = viewer.value(0);
+
+    *result = detail::Roaring64Map::read(value.data);
     return Status::OK();
 }
 

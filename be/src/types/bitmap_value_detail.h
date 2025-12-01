@@ -39,6 +39,7 @@
 // So other files should not include this file except bitmap_value.cpp.
 #include <cstdint>
 #include <optional>
+#include <ranges>
 
 #include "roaring/array_util.h"
 #include "roaring/bitset_util.h"
@@ -154,6 +155,16 @@ public:
             ans.add(va_arg(vl, uint64_t));
         }
         va_end(vl);
+        return ans;
+    }
+
+    /**
+     * Construct a bitmap from a list of uint64_t values.
+     * E.g., bitmapOfList({1,2,3}).
+     */
+    static Roaring64Map bitmapOfList(std::initializer_list<uint64_t> l) {
+        Roaring64Map ans;
+        ans.addMany(l.size(), l.begin());
         return ans;
     }
 
@@ -761,6 +772,23 @@ public:
      * Return whether all elements can be represented in 32 bits
      */
     bool is32BitsEnough() const { return maximum() <= std::numeric_limits<uint32_t>::max(); }
+
+    const Roaring& getLowBitsRoaring(uint32_t high) const {
+        const auto it = roarings.find(high);
+        if (it == roarings.end()) {
+            static const Roaring empty;
+            return empty;
+        }
+        return it->second;
+    }
+
+    roaring::Roaring getAllHighBits() const {
+        roaring::Roaring roaring;
+        for (const auto& high : roarings | std::views::keys) {
+            roaring.add(high);
+        }
+        return roaring;
+    }
 
     /**
      * Computes the intersection between two bitmaps and returns new bitmap.

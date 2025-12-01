@@ -47,6 +47,7 @@
 #include "storage/rowset/indexed_column_writer.h"
 #include "storage/type_traits.h"
 #include "storage/types.h"
+#include "types/bitmap_value_detail.h"
 #include "util/faststring.h"
 #include "util/phmap/btree.h"
 #include "util/phmap/phmap.h"
@@ -56,34 +57,47 @@
 
 namespace starrocks {
 
-using Roaring = roaring::Roaring;
+// mapping from ValueType to RoaringType
+template <typename ValueType>
+struct BitmapValueTraits;
 
+template <>
+struct BitmapValueTraits<rowid_t> {
+    using type = roaring::Roaring;
+};
+
+template <>
+struct BitmapValueTraits<uint64_t> {
+    using type = detail::Roaring64Map;
+};
+
+template <typename ValueType>
 class BitmapUpdateContext {
-    static const size_t estimate_size_threshold = 1024;
+    static constexpr size_t estimate_size_threshold = 1024;
+
+    using RoaringType = BitmapValueTraits<ValueType>::type;
 
 public:
-    explicit BitmapUpdateContext(rowid_t rid) : _roaring(Roaring::bitmapOf(1, rid)) {
+    explicit BitmapUpdateContext(ValueType rid) : _roaring(RoaringType::bitmapOf(1, rid)) {
         _pending_adds.reserve(_ADD_BATCH_SIZE);
-    };
-    explicit BitmapUpdateContext(rowid_t rid0, rowid_t rid1) : _roaring(Roaring::bitmapOfList({rid0, rid1})) {
+    }
+    explicit BitmapUpdateContext(ValueType rid0, ValueType rid1) : _roaring(RoaringType::bitmapOfList({rid0, rid1})) {
         _pending_adds.reserve(_ADD_BATCH_SIZE);
-    };
+    }
 
-    Roaring* roaring() { return &_roaring; }
+    RoaringType* roaring() { return &_roaring; }
 
     static uint64_t estimate_size(int element_count) {
         // When _element_count is less than estimate_size_threshold, we use
-        // (1 + _element_count + 1) * (sizeof(uint32_t)) to approximately estimate true size of roaring bitmap:
+        // (1 + _element_count + 1) * (sizeof(ValueType)) to approximately estimate true size of roaring bitmap:
         // one bit pre    4 bytes         4 bytes *  _element_count
         // [ 1            cardinality      data ]
-        return (1 + sizeof(uint32_t) * (element_count + 1));
+        return (1 + sizeof(ValueType) * (element_count + 1));
     }
 
-    static void init_estimate_size(uint64_t* reverted_index_size) {
-        *reverted_index_size += BitmapUpdateContext::estimate_size(1);
-    }
+    static void init_estimate_size(uint64_t* reverted_index_size) { *reverted_index_size += estimate_size(1); }
 
-    void add_and_flush_if_needed(rowid_t rid) {
+    void add_and_flush_if_needed(ValueType rid) {
         _pending_adds.push_back(rid);
         if (_pending_adds.size() >= _ADD_BATCH_SIZE) {
             flush_pending_adds();
@@ -108,7 +122,7 @@ public:
         bool need_add = false;
         _element_count++;
         if (_element_count < estimate_size_threshold) {
-            *reverted_index_size += sizeof(uint32_t);
+            *reverted_index_size += sizeof(ValueType);
         } else if (_element_count == estimate_size_threshold) {
             *reverted_index_size -= BitmapUpdateContext::estimate_size(_element_count);
             _size_changed = true;
@@ -132,17 +146,20 @@ public:
     }
 
 private:
-    Roaring _roaring;
+    RoaringType _roaring;
     uint64_t _previous_size{0};
     uint32_t _element_count{1};
     bool _size_changed{false};
-    std::vector<uint32_t> _pending_adds;
-    static const size_t _ADD_BATCH_SIZE = 64;
+    std::vector<ValueType> _pending_adds;
+    static constexpr size_t _ADD_BATCH_SIZE = 64;
 };
 
 // if last bit is 0 it is std::unique_ptr<BitmapUpdateContext>
 // else it is a single value
+template <typename ValueType>
 class BitmapUpdateContextRefOrSingleValue {
+    using RoaringType = BitmapValueTraits<ValueType>::type;
+
 public:
     BitmapUpdateContextRefOrSingleValue(const BitmapUpdateContextRefOrSingleValue& rhs) = delete;
     BitmapUpdateContextRefOrSingleValue& operator=(const BitmapUpdateContextRefOrSingleValue& rhs) = delete;
@@ -155,31 +172,33 @@ public:
         rhs._value = 1; // make sure not delete when rhs is destroyed
         return *this;
     }
-    BitmapUpdateContextRefOrSingleValue(uint32_t value) { _value = (value << 1) | 1; }
+    BitmapUpdateContextRefOrSingleValue(ValueType value) { _value = (value << 1) | 1; }
     ~BitmapUpdateContextRefOrSingleValue() {
         if (is_context()) {
             delete context();
         }
     }
     bool is_context() const { return (_value & 1) == 0; }
-    uint32_t value() const { return _value >> 1; }
-    BitmapUpdateContext* context() const {
-        return reinterpret_cast<BitmapUpdateContext*>(_value); // NOLINT
+    ValueType value() const { return _value >> 1; }
+    BitmapUpdateContext<ValueType>* context() const {
+        return reinterpret_cast<BitmapUpdateContext<ValueType>*>(_value); // NOLINT
     }
-    void add(rowid_t rid) {
+    void add(ValueType rid) {
         if (is_context()) {
             context()->add_and_flush_if_needed(rid);
         } else {
-            auto* context = new BitmapUpdateContext(value(), rid);
+            auto* context = new BitmapUpdateContext<ValueType>(value(), rid);
             _value = reinterpret_cast<uint64_t>(context); // NOLINT
         }
     }
-    Roaring* roaring() { return context()->roaring(); }
+    RoaringType* roaring() { return context()->roaring(); }
 
-    static uint64_t estimate_size(int element_count) { return BitmapUpdateContext::estimate_size(element_count); }
+    static uint64_t estimate_size(int element_count) {
+        return BitmapUpdateContext<ValueType>::estimate_size(element_count);
+    }
 
     static void init_estimate_size(uint64_t* reverted_index_size) {
-        return BitmapUpdateContext::init_estimate_size(reverted_index_size);
+        return BitmapUpdateContext<ValueType>::init_estimate_size(reverted_index_size);
     }
 
     bool update_estimate_size(uint64_t* reverted_index_size) {
@@ -210,17 +229,30 @@ struct BitmapIndexSliceHash {
     inline size_t operator()(const Slice& v) const { return XXH3_64bits(v.data, v.size); }
 };
 
-template <typename CppType>
+template <typename CppType, bool positional>
 struct BitmapIndexTraits {
-    using UnorderedMemoryIndexType = phmap::flat_hash_map<CppType, BitmapUpdateContextRefOrSingleValue>;
-    using OrderedMemoryIndexType = std::map<CppType, BitmapUpdateContextRefOrSingleValue>;
+    using ValueType = rowid_t;
+    using BitmapUpdateContextType = BitmapUpdateContextRefOrSingleValue<ValueType>;
+    using UnorderedMemoryIndexType = phmap::flat_hash_map<CppType, BitmapUpdateContextType>;
+    using OrderedMemoryIndexType = std::map<CppType, BitmapUpdateContextType>;
 };
 
 template <>
-struct BitmapIndexTraits<Slice> {
-    using UnorderedMemoryIndexType = phmap::flat_hash_map<Slice, BitmapUpdateContextRefOrSingleValue,
-                                                          BitmapIndexSliceHash, std::equal_to<Slice>>;
-    using OrderedMemoryIndexType = std::map<Slice, BitmapUpdateContextRefOrSingleValue, Slice::Comparator>;
+struct BitmapIndexTraits<Slice, false> {
+    using ValueType = rowid_t;
+    using BitmapUpdateContextType = BitmapUpdateContextRefOrSingleValue<ValueType>;
+    using UnorderedMemoryIndexType =
+            phmap::flat_hash_map<Slice, BitmapUpdateContextType, BitmapIndexSliceHash, std::equal_to<Slice>>;
+    using OrderedMemoryIndexType = std::map<Slice, BitmapUpdateContextType, Slice::Comparator>;
+};
+
+template <>
+struct BitmapIndexTraits<Slice, true> {
+    using ValueType = uint64_t;
+    using BitmapUpdateContextType = BitmapUpdateContextRefOrSingleValue<ValueType>;
+    using UnorderedMemoryIndexType =
+            phmap::flat_hash_map<Slice, BitmapUpdateContextType, BitmapIndexSliceHash, std::equal_to<Slice>>;
+    using OrderedMemoryIndexType = std::map<Slice, BitmapUpdateContextType, Slice::Comparator>;
 };
 
 // Builder for bitmap index. Bitmap index is comprised of two parts
@@ -236,12 +268,15 @@ struct BitmapIndexTraits<Slice> {
 //   bitmap for ID 1 : [1 1 1 0 0 0 1 0 0 0]
 //   the n-th bit is set to 1 if the n-th row equals to the corresponding value.
 //
-template <LogicalType field_type>
+template <LogicalType field_type, bool positional>
 class BitmapIndexWriterImpl : public BitmapIndexWriter {
 public:
-    using CppType = typename CppTypeTraits<field_type>::CppType;
-    using UnorderedMemoryIndexType = typename BitmapIndexTraits<CppType>::UnorderedMemoryIndexType;
-    using OrderedMemoryIndexType = typename BitmapIndexTraits<CppType>::OrderedMemoryIndexType;
+    using CppType = CppTypeTraits<field_type>::CppType;
+    using ValueType = BitmapIndexTraits<CppType, positional>::ValueType;
+    using RoaringType = BitmapValueTraits<ValueType>::type;
+    using BitmapUpdateContextType = BitmapIndexTraits<CppType, positional>::BitmapUpdateContextType;
+    using UnorderedMemoryIndexType = BitmapIndexTraits<CppType, positional>::UnorderedMemoryIndexType;
+    using OrderedMemoryIndexType = BitmapIndexTraits<CppType, positional>::OrderedMemoryIndexType;
 
     explicit BitmapIndexWriterImpl(TypeInfoPtr type_info, int32_t gram_num)
             : _gram_num(gram_num), _typeinfo(std::move(type_info)) {}
@@ -249,19 +284,30 @@ public:
     ~BitmapIndexWriterImpl() override = default;
 
     void add_values(const void* values, size_t count) override {
-        auto p = reinterpret_cast<const CppType*>(values);
+        auto p = static_cast<const CppType*>(values);
         for (size_t i = 0; i < count; ++i) {
             add_value_with_current_rowid(p);
-            _rid++;
-            p++;
+            incre_rowid();
+            ++p;
         }
     }
 
     inline void add_value_with_current_rowid(const void* vptr) override {
-        const CppType& value = *(reinterpret_cast<const CppType*>(vptr));
+        const CppType& value = *static_cast<const CppType*>(vptr);
+
+        ValueType val = _rid;
+        if constexpr (positional) {
+            val = val << 32 | _pos;
+            ++_pos;
+        }
+
+        if constexpr (std::is_same_v<CppType, Slice>) {
+            LOG(INFO) << "##### dict " << value.to_string() << ", write value: " << val;
+        }
+
         auto it = _mem_index.find(value);
         if (it != _mem_index.end()) {
-            it->second.add(_rid);
+            it->second.add(val);
             if (it->second.update_estimate_size(&_reverted_index_size)) {
                 _late_update_context_vector.push_back(it->second.context());
             }
@@ -269,14 +315,15 @@ public:
             // new value, copy value and insert new key->bitmap pair
             CppType new_value;
             _typeinfo->deep_copy(&new_value, &value, &_pool);
-            _mem_index.emplace(new_value, _rid);
-            BitmapUpdateContext::init_estimate_size(&_reverted_index_size);
+            _mem_index.emplace(new_value, val);
+            BitmapUpdateContext<ValueType>::init_estimate_size(&_reverted_index_size);
         }
     }
 
     void add_nulls(uint32_t count) override {
         _null_bitmap.addRange(_rid, _rid + count);
         _rid += count;
+        _pos = 0;
     }
 
     Status finish(WritableFile* wfile, ColumnIndexMetaPB* index_meta) override {
@@ -300,18 +347,18 @@ public:
         // write bitmap
         RETURN_IF_ERROR(_write_bitmap(ordered_mem_index, wfile, meta->mutable_bitmap_column()));
 
-        if (_gram_num > 0) {
-            if constexpr (field_type == TYPE_VARCHAR || field_type == TYPE_CHAR) {
+        if constexpr (field_type == TYPE_VARCHAR || field_type == TYPE_CHAR) {
+            if (_gram_num > 0) {
                 size_t offset = 0;
                 OrderedMemoryIndexType ngram_index;
                 for (const auto& it : ordered_mem_index) {
                     RETURN_IF_ERROR(_build_ngram(ngram_index, &it.first, offset++));
                 }
-                for (auto& it: ngram_index) {
+                for (auto& it : ngram_index) {
                     it.second.flush_pending_adds();
                 }
                 RETURN_IF_ERROR(_write_dictionary(ngram_index, wfile, meta->mutable_ngram_dict_column()));
-                RETURN_IF_ERROR(_write_bitmap(ngram_index, wfile, meta->mutable_ngram_bitmap_column()));
+                RETURN_IF_ERROR(_write_bitmap(ngram_index, wfile, meta->mutable_ngram_bitmap_column(), false));
             }
         }
         return Status::OK();
@@ -320,7 +367,7 @@ public:
     uint64_t size() const override {
         uint64_t size = 0;
         size += _null_bitmap.getSizeInBytes(false);
-        for (BitmapUpdateContext* update_context : _late_update_context_vector) {
+        for (BitmapUpdateContext<ValueType>* update_context : _late_update_context_vector) {
             update_context->flush_pending_adds();
             update_context->late_update_size(&_reverted_index_size);
         }
@@ -331,7 +378,10 @@ public:
         return size;
     }
 
-    inline void incre_rowid() override { _rid++; }
+    inline void incre_rowid() override {
+        ++_rid;
+        _pos = 0;
+    }
 
 private:
     Status _build_ngram(OrderedMemoryIndexType& ngram_index, const Slice* cur_slice, const size_t offset) {
@@ -378,8 +428,9 @@ private:
         return dict_column_writer.finish(meta);
     }
 
-    Status _write_bitmap(OrderedMemoryIndexType& ordered_mem_index, WritableFile* wfile, IndexedColumnMetaPB* meta) {
-        std::vector<BitmapUpdateContextRefOrSingleValue*> bitmaps;
+    Status _write_bitmap(OrderedMemoryIndexType& ordered_mem_index, WritableFile* wfile, IndexedColumnMetaPB* meta,
+                         bool write_null = true) {
+        std::vector<BitmapUpdateContextType*> bitmaps;
         for (auto& it : ordered_mem_index) {
             bitmaps.push_back(&(it.second));
         }
@@ -415,18 +466,27 @@ private:
         for (size_t i = 0; i < bitmaps.size(); ++i) {
             if (bitmaps[i]->is_context()) {
                 buf.resize(bitmap_sizes[i]); // so that buf[0..size) can be read and written
-                bitmaps[i]->context()->roaring()->write(reinterpret_cast<char*>(buf.data()), false);
+                if constexpr (std::is_same_v<RoaringType, roaring::Roaring>) {
+                    bitmaps[i]->context()->roaring()->write(reinterpret_cast<char*>(buf.data()), false);
+                } else {
+                    bitmaps[i]->context()->roaring()->write(reinterpret_cast<char*>(buf.data()),
+                                                            config::bitmap_serialize_version);
+                }
             } else {
-                Roaring roar({bitmaps[i]->value()});
+                RoaringType roar = RoaringType::bitmapOfList({bitmaps[i]->value()});
                 roar.runOptimize();
                 auto sz = roar.getSizeInBytes(false);
                 buf.resize(sz);
-                roar.write(reinterpret_cast<char*>(buf.data()), false);
+                if constexpr (std::is_same_v<RoaringType, roaring::Roaring>) {
+                    roar.write(reinterpret_cast<char*>(buf.data()), false);
+                } else {
+                    roar.write(reinterpret_cast<char*>(buf.data()), config::bitmap_serialize_version);
+                }
             }
             Slice buf_slice(buf);
             RETURN_IF_ERROR(bitmap_column_writer.add(&buf_slice));
         }
-        if (!_null_bitmap.isEmpty()) {
+        if (write_null && !_null_bitmap.isEmpty()) {
             _null_bitmap.runOptimize();
             buf.resize(_null_bitmap.getSizeInBytes(false)); // so that buf[0..size) can be read and written
             _null_bitmap.write(reinterpret_cast<char*>(buf.data()), false);
@@ -440,9 +500,10 @@ private:
 
     TypeInfoPtr _typeinfo;
     rowid_t _rid = 0;
+    rowid_t _pos = 0;
 
     // row id list for null value
-    Roaring _null_bitmap;
+    roaring::Roaring _null_bitmap;
     // unique value to its row id list
     // Use UnorderedMemoryIndexType during loading and sort it when finish is more efficient than only
     // use OrderedMemoryIndexType. Especially for the case of built-in inverted index workload.
@@ -451,20 +512,25 @@ private:
 
     // roaring bitmap size
     mutable uint64_t _reverted_index_size = 0;
-    mutable std::vector<BitmapUpdateContext*> _late_update_context_vector;
+    mutable std::vector<BitmapUpdateContext<ValueType>*> _late_update_context_vector;
 };
 
 struct BitmapIndexWriterBuilder {
     template <LogicalType ftype>
-    std::unique_ptr<BitmapIndexWriter> operator()(const TypeInfoPtr& typeinfo, int32_t gram_num) {
-        return std::make_unique<BitmapIndexWriterImpl<ftype>>(typeinfo, gram_num);
+    std::unique_ptr<BitmapIndexWriter> operator()(const TypeInfoPtr& typeinfo, int32_t gram_num, bool with_position) {
+        if constexpr (ftype == TYPE_VARCHAR || ftype == TYPE_CHAR) {
+            if (with_position) {
+                return std::make_unique<BitmapIndexWriterImpl<ftype, true>>(typeinfo, gram_num);
+            }
+        }
+        return std::make_unique<BitmapIndexWriterImpl<ftype, false>>(typeinfo, gram_num);
     }
 };
 
-Status BitmapIndexWriter::create(const TypeInfoPtr& typeinfo, std::unique_ptr<BitmapIndexWriter>* res,
-                                 int32_t gram_num) {
+Status BitmapIndexWriter::create(const TypeInfoPtr& typeinfo, std::unique_ptr<BitmapIndexWriter>* res, int32_t gram_num,
+                                 bool with_position) {
     LogicalType type = typeinfo->type();
-    *res = field_type_dispatch_bitmap_index(type, BitmapIndexWriterBuilder(), typeinfo, gram_num);
+    *res = field_type_dispatch_bitmap_index(type, BitmapIndexWriterBuilder(), typeinfo, gram_num, with_position);
 
     return Status::OK();
 }

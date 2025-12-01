@@ -81,6 +81,13 @@ int32_t get_gram_num_from_properties(const std::map<std::string, std::string>& p
     return -1;
 }
 
+bool get_omit_term_freq_and_position(const std::map<std::string, std::string>& properties) {
+    if (const auto it = properties.find(INVERTED_INDEX_OMIT_TERM_FREQ_AND_POSITION); it != properties.end()) {
+        return boost::to_lower_copy(it->second) != INVERTED_INDEX_OMIT_TERM_FREQ_AND_POSITION_DEFAULT;
+    }
+    return false;
+}
+
 bool is_tokenized_from_properties(const std::map<std::string, std::string>& properties) {
     auto tokenized_res = properties.find(INVERTED_INDEX_TOKENIZED_KEY);
     if (tokenized_res != properties.end()) {

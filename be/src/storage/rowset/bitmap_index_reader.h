@@ -57,7 +57,7 @@ using Roaring = roaring::Roaring;
 
 class BitmapIndexReader {
 public:
-    BitmapIndexReader(int32_t gram_num = -1);
+    BitmapIndexReader(int32_t gram_num = -1, bool with_position = false);
     ~BitmapIndexReader();
 
     // Load index data into memory.
@@ -78,6 +78,8 @@ public:
     int64_t bitmap_nums() { return _bitmap_column_reader->num_values(); }
 
     int32_t gram_num() const { return _gram_num; }
+
+    bool with_position() const { return _with_position; }
 
     // REQUIRES: the index data has been successfully `load()`ed into memory.
     int64_t ngram_bitmap_nums() const {
@@ -116,6 +118,7 @@ private:
     Status _do_load(const IndexReadOptions& opts, const BitmapIndexPB& meta);
 
     int32_t _gram_num;
+    bool _with_position;
 
     OnceFlag _load_once;
     TypeInfoPtr _typeinfo;
@@ -163,13 +166,12 @@ public:
     // Returns other error status otherwise.
     Status seek_dictionary(const void* value, bool* exact_match);
 
-    StatusOr<Buffer<rowid_t>> seek_dictionary_by_predicate(const DictPredicate& predicate, const Slice& from_value,
-                                                           size_t search_size);
-
     Status next_batch_dictionary(size_t* n, Column* column);
 
     // Read bitmap at the given ordinal into `result`.
     Status read_bitmap(rowid_t ordinal, Roaring* result);
+
+    Status read_bitmap64(rowid_t ordinal, detail::Roaring64Map* result) const;
 
     Status read_null_bitmap(Roaring* result) {
         if (has_null_bitmap()) {
