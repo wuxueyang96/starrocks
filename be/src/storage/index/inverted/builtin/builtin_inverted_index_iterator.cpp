@@ -18,8 +18,6 @@
 
 #include <memory>
 
-#include "exprs/function_context.h"
-#include "exprs/like_predicate.h"
 #include "storage/chunk_helper.h"
 #include "util/runtime_profile.h"
 
@@ -204,7 +202,6 @@ Status BuiltinInvertedIndexIterator::_phrase_query(const Slice* search_query, ro
 
     std::string cur_predicate;
     while (iss >> cur_predicate) {
-        LOG(INFO) << "match_phrase: filter for " << cur_predicate;
         Slice s(cur_predicate);
 
         bool exact_match = true;
@@ -213,7 +210,6 @@ Status BuiltinInvertedIndexIterator::_phrase_query(const Slice* search_query, ro
         detail::Roaring64Map roaring;
         if (st.ok() && exact_match) {
             rowid_t ordinal = _bitmap_itr->current_ordinal();
-            LOG(INFO) << "match_phrase: found at ordinal: " << ordinal;
 
             RETURN_IF_ERROR(_bitmap_itr->read_bitmap64(ordinal, &roaring));
 
@@ -226,18 +222,15 @@ Status BuiltinInvertedIndexIterator::_phrase_query(const Slice* search_query, ro
             }
 
             for (const auto& row : rows) {
-                LOG(INFO) << "match_phrase: processing row: " << row;
                 auto it = positions.find(row);
 
                 roaring::Roaring position_list = roaring.getLowBitsRoaring(row);
                 if (it == positions.end()) {
                     phmap::flat_hash_map<rowid_t, roaring::Roaring> dict_to_position_list;
                     dict_to_position_list.emplace(ordinal, position_list);
-                    const auto& [_, inserted] = positions.emplace(row, dict_to_position_list);
-                    LOG(INFO) << "match_phrase: add row " << row << " success? " << inserted;
+                    positions.emplace(row, dict_to_position_list);
                 } else {
-                    const auto& [_, inserted] = it->second.emplace(ordinal, position_list);
-                    LOG(INFO) << "match_phrase: add row " << row << " success? " << inserted;
+                    it->second.emplace(ordinal, position_list);
                 }
             }
 
@@ -251,9 +244,7 @@ Status BuiltinInvertedIndexIterator::_phrase_query(const Slice* search_query, ro
     }
 
     for (const rowid_t& row : filtered_rows) {
-        LOG(INFO) << "match_phrase: final processing row: " << row;
         for (auto dict_to_position_list = positions.at(row); const rowid_t start : dict_to_position_list[dict_ids[0]]) {
-            LOG(INFO) << "match_phrase: start position: " << start;
             bool found = true;
             for (size_t offset = 1; offset < dict_ids.size(); ++offset) {
                 if (const auto& position_list = dict_to_position_list.at(dict_ids[offset]);
@@ -263,7 +254,6 @@ Status BuiltinInvertedIndexIterator::_phrase_query(const Slice* search_query, ro
                 }
             }
             if (found) {
-                LOG(INFO) << "match_phrase: found row: " << row;
                 bit_map->add(row);
                 break;
             }

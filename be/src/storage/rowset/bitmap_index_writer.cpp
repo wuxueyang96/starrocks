@@ -306,10 +306,6 @@ public:
             ++_pos;
         }
 
-        if constexpr (std::is_same_v<CppType, Slice>) {
-            LOG(INFO) << "##### dict " << value.to_string() << ", write value: " << val;
-        }
-
         auto it = _mem_index.find(value);
         if (it != _mem_index.end()) {
             it->second.add(val);
