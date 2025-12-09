@@ -181,7 +181,19 @@ Status BitmapIndexIterator::seek_dict_by_ngram(const void* value, roaring::Roari
         ColumnViewer<TYPE_VARCHAR> viewer(std::move(column));
         const auto str_bitmap = viewer.value(0);
 
-        const auto tmp = Roaring::read(str_bitmap.data, false);
+        roaring::Roaring tmp;
+        if (!_reader->with_position()) {
+            tmp = Roaring::read(str_bitmap.data, false);
+        } else {
+            const auto tmp64 = detail::Roaring64Map::read(str_bitmap.data);
+            if (!tmp64.is32BitsEnough()) {
+                return Status::InternalError(fmt::format(
+                        "too many n-gram dictionaries, maximum is {}, please consider increase the 'dict_gram_num'.",
+                        tmp64.maximum().value_or(0)));
+            }
+            tmp = tmp64.getLowBitsRoaring(0);
+        }
+
         if (first) {
             *roaring |= tmp;
             first = false;
@@ -253,7 +265,17 @@ Status BitmapIndexIterator::read_ngram_bitmap(rowid_t ordinal, Roaring* result) 
         }
         const ColumnViewer<TYPE_VARCHAR> viewer(std::move(column));
         const auto value = viewer.value(0);
-        *result = Roaring::read(value.data, false);
+        if (!_reader->with_position()) {
+            *result = Roaring::read(value.data, false);
+        } else {
+            const auto tmp64 = detail::Roaring64Map::read(value.data);
+            if (!tmp64.is32BitsEnough()) {
+                return Status::InternalError(fmt::format(
+                        "too many n-gram dictionaries, maximum is {}, please consider increase the 'dict_gram_num'.",
+                        tmp64.maximum().value_or(0)));
+            }
+            *result = tmp64.getLowBitsRoaring(0);
+        }
     }
     return Status::OK();
 }
