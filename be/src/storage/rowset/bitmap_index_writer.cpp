@@ -139,7 +139,12 @@ public:
     }
 
     void late_update_size(uint64_t* reverted_index_size) {
-        uint64_t current_size = _roaring.getSizeInBytes(false);
+        uint64_t current_size;
+        if constexpr (std::is_same_v<RoaringType, roaring::Roaring>) {
+            current_size = _roaring.getSizeInBytes(false);
+        } else {
+            current_size = _roaring.getSizeInBytes(config::bitmap_serialize_version);
+        }
         *reverted_index_size += (current_size - _previous_size);
         _previous_size = current_size;
         _size_changed = false;
@@ -441,7 +446,11 @@ private:
             uint32_t bitmap_size = 0;
             if (bitmap->is_context()) {
                 bitmap->context()->roaring()->runOptimize();
-                bitmap_size = bitmap->context()->roaring()->getSizeInBytes(false);
+                if constexpr (std::is_same_v<RoaringType, roaring::Roaring>) {
+                    bitmap_size = bitmap->context()->roaring()->getSizeInBytes(false);
+                } else {
+                    bitmap_size = bitmap->context()->roaring()->getSizeInBytes(config::bitmap_serialize_version);
+                }
                 if (max_bitmap_size < bitmap_size) {
                     max_bitmap_size = bitmap_size;
                 }
@@ -475,11 +484,13 @@ private:
             } else {
                 RoaringType roar = RoaringType::bitmapOfList({bitmaps[i]->value()});
                 roar.runOptimize();
-                auto sz = roar.getSizeInBytes(false);
-                buf.resize(sz);
                 if constexpr (std::is_same_v<RoaringType, roaring::Roaring>) {
+                    auto sz = roar.getSizeInBytes(false);
+                    buf.resize(sz);
                     roar.write(reinterpret_cast<char*>(buf.data()), false);
                 } else {
+                    auto sz = roar.getSizeInBytes(config::bitmap_serialize_version);
+                    buf.resize(sz);
                     roar.write(reinterpret_cast<char*>(buf.data()), config::bitmap_serialize_version);
                 }
             }
