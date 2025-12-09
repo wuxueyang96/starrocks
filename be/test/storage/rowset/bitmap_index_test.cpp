@@ -69,9 +69,9 @@ protected:
     void TearDown() override {}
 
     void get_bitmap_reader_iter(RandomAccessFile* rfile, const ColumnIndexMetaPB& meta, BitmapIndexReader** reader,
-                                BitmapIndexIterator** iter, int32_t gram_num = -1) {
+                                BitmapIndexIterator** iter, int32_t gram_num = -1, bool with_position = false) {
         _opts.read_file = rfile;
-        *reader = new BitmapIndexReader(gram_num);
+        *reader = new BitmapIndexReader(gram_num, with_position);
         ASSIGN_OR_ABORT(auto r, (*reader)->load(_opts, meta.bitmap_index()));
         ASSERT_TRUE(r);
         ASSERT_OK((*reader)->new_iterator(_opts, iter));
@@ -422,7 +422,7 @@ TEST_F(BitmapIndexTest, test_with_position) {
         BitmapIndexReader* reader = nullptr;
         BitmapIndexIterator* iter = nullptr;
         ASSIGN_OR_ABORT(auto rfile, _fs->new_random_access_file(file_name));
-        get_bitmap_reader_iter(rfile.get(), meta, &reader, &iter);
+        get_bitmap_reader_iter(rfile.get(), meta, &reader, &iter, -1, true);
 
         // Verify the dictionary contains unique values
         ASSERT_EQ(5, reader->bitmap_nums()); // bar, foo, hello, test, world (sorted)
@@ -438,7 +438,7 @@ TEST_F(BitmapIndexTest, test_with_position) {
                 ASSERT_TRUE(exact_match);
 
                 detail::Roaring64Map bitmap;
-                iter->read_bitmap64(iter->current_ordinal(), &bitmap);
+                ASSERT_TRUE(iter->read_bitmap64(iter->current_ordinal(), &bitmap).ok());
 
                 roaring::Roaring row_ids = bitmap.getAllHighBits();
                 ASSERT_TRUE(row_ids.contains(row_id));
