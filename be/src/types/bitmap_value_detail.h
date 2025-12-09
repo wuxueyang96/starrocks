@@ -40,6 +40,7 @@
 #include <cstdint>
 #include <optional>
 #include <ranges>
+#include <numeric>
 
 #include "roaring/array_util.h"
 #include "roaring/bitset_util.h"
