@@ -246,7 +246,8 @@ template <>
 struct BitmapIndexTraits<Slice, false> {
     using ValueType = rowid_t;
     using BitmapUpdateContextType = BitmapUpdateContextRefOrSingleValue<ValueType>;
-    using UnorderedMemoryIndexType = phmap::flat_hash_map<Slice, std::unique_ptr<BitmapUpdateContextType>, BitmapIndexSliceHash, std::equal_to<Slice>>;
+    using UnorderedMemoryIndexType = phmap::flat_hash_map<Slice, std::unique_ptr<BitmapUpdateContextType>,
+                                                          BitmapIndexSliceHash, std::equal_to<Slice>>;
     using OrderedMemoryIndexType = std::map<Slice, std::unique_ptr<BitmapUpdateContextType>, Slice::Comparator>;
 };
 
@@ -254,7 +255,8 @@ template <>
 struct BitmapIndexTraits<Slice, true> {
     using ValueType = uint64_t;
     using BitmapUpdateContextType = BitmapUpdateContextRefOrSingleValue<ValueType>;
-    using UnorderedMemoryIndexType = phmap::flat_hash_map<Slice, std::unique_ptr<BitmapUpdateContextType>, BitmapIndexSliceHash, std::equal_to<Slice>>;
+    using UnorderedMemoryIndexType = phmap::flat_hash_map<Slice, std::unique_ptr<BitmapUpdateContextType>,
+                                                          BitmapIndexSliceHash, std::equal_to<Slice>>;
     using OrderedMemoryIndexType = std::map<Slice, std::unique_ptr<BitmapUpdateContextType>, Slice::Comparator>;
 };
 
@@ -403,7 +405,8 @@ private:
             if (it == ngram_index.end()) {
                 CppType new_value;
                 _typeinfo->deep_copy(&new_value, &cur_ngram, &_pool);
-                ngram_index.emplace(new_value, offset);
+                auto new_context = std::make_unique<BitmapUpdateContextType>(static_cast<ValueType>(offset));
+                ngram_index.emplace(new_value, std::move(new_context));
             } else {
                 it->second->add(offset);
             }
