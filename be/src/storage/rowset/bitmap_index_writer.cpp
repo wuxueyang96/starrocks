@@ -238,26 +238,24 @@ template <typename CppType, bool positional>
 struct BitmapIndexTraits {
     using ValueType = rowid_t;
     using BitmapUpdateContextType = BitmapUpdateContextRefOrSingleValue<ValueType>;
-    using UnorderedMemoryIndexType = phmap::flat_hash_map<CppType, BitmapUpdateContextType>;
-    using OrderedMemoryIndexType = std::map<CppType, BitmapUpdateContextType>;
+    using UnorderedMemoryIndexType = phmap::flat_hash_map<CppType, std::unique_ptr<BitmapUpdateContextType>>;
+    using OrderedMemoryIndexType = std::map<CppType, std::unique_ptr<BitmapUpdateContextType>>;
 };
 
 template <>
 struct BitmapIndexTraits<Slice, false> {
     using ValueType = rowid_t;
     using BitmapUpdateContextType = BitmapUpdateContextRefOrSingleValue<ValueType>;
-    using UnorderedMemoryIndexType =
-            phmap::flat_hash_map<Slice, BitmapUpdateContextType, BitmapIndexSliceHash, std::equal_to<Slice>>;
-    using OrderedMemoryIndexType = std::map<Slice, BitmapUpdateContextType, Slice::Comparator>;
+    using UnorderedMemoryIndexType = phmap::flat_hash_map<Slice, std::unique_ptr<BitmapUpdateContextType>, BitmapIndexSliceHash, std::equal_to<Slice>>;
+    using OrderedMemoryIndexType = std::map<Slice, std::unique_ptr<BitmapUpdateContextType>, Slice::Comparator>;
 };
 
 template <>
 struct BitmapIndexTraits<Slice, true> {
     using ValueType = uint64_t;
     using BitmapUpdateContextType = BitmapUpdateContextRefOrSingleValue<ValueType>;
-    using UnorderedMemoryIndexType =
-            phmap::flat_hash_map<Slice, BitmapUpdateContextType, BitmapIndexSliceHash, std::equal_to<Slice>>;
-    using OrderedMemoryIndexType = std::map<Slice, BitmapUpdateContextType, Slice::Comparator>;
+    using UnorderedMemoryIndexType = phmap::flat_hash_map<Slice, std::unique_ptr<BitmapUpdateContextType>, BitmapIndexSliceHash, std::equal_to<Slice>>;
+    using OrderedMemoryIndexType = std::map<Slice, std::unique_ptr<BitmapUpdateContextType>, Slice::Comparator>;
 };
 
 // Builder for bitmap index. Bitmap index is comprised of two parts
@@ -308,15 +306,15 @@ public:
 
         auto it = _mem_index.find(value);
         if (it != _mem_index.end()) {
-            it->second.add(val);
-            if (it->second.update_estimate_size(&_reverted_index_size)) {
-                _late_update_context_vector.push_back(it->second.context());
+            it->second->add(val);
+            if (it->second->update_estimate_size(&_reverted_index_size)) {
+                _late_update_context_vector.push_back(it->second->context());
             }
         } else {
             // new value, copy value and insert new key->bitmap pair
             CppType new_value;
             _typeinfo->deep_copy(&new_value, &value, &_pool);
-            _mem_index.emplace(new_value, val);
+            _mem_index.emplace(new_value, std::make_unique<BitmapUpdateContextType>(val));
             BitmapUpdateContext<ValueType>::init_estimate_size(&_reverted_index_size);
         }
     }
@@ -339,7 +337,7 @@ public:
 
         OrderedMemoryIndexType ordered_mem_index;
         for (auto& p : _mem_index) {
-            p.second.flush_pending_adds();
+            p.second->flush_pending_adds();
             ordered_mem_index.insert(std::move(p));
         }
 
@@ -352,11 +350,11 @@ public:
             if (_gram_num > 0) {
                 size_t offset = 0;
                 OrderedMemoryIndexType ngram_index;
-                for (const auto& it : ordered_mem_index) {
-                    RETURN_IF_ERROR(_build_ngram(ngram_index, &it.first, offset++));
+                for (const auto& dict : ordered_mem_index | std::views::keys) {
+                    RETURN_IF_ERROR(_build_ngram(ngram_index, &dict, offset++));
                 }
                 for (auto& it : ngram_index) {
-                    it.second.flush_pending_adds();
+                    it.second->flush_pending_adds();
                 }
                 RETURN_IF_ERROR(_write_dictionary(ngram_index, wfile, meta->mutable_ngram_dict_column()));
                 RETURN_IF_ERROR(_write_bitmap(ngram_index, wfile, meta->mutable_ngram_bitmap_column(), false));
@@ -407,7 +405,7 @@ private:
                 _typeinfo->deep_copy(&new_value, &cur_ngram, &_pool);
                 ngram_index.emplace(new_value, offset);
             } else {
-                it->second.add(offset);
+                it->second->add(offset);
             }
         }
         return Status::OK();
@@ -431,9 +429,9 @@ private:
 
     Status _write_bitmap(OrderedMemoryIndexType& ordered_mem_index, WritableFile* wfile, IndexedColumnMetaPB* meta,
                          bool write_null = true) {
-        std::vector<BitmapUpdateContextType*> bitmaps;
+        std::vector<std::unique_ptr<BitmapUpdateContextType>> bitmaps;
         for (auto& it : ordered_mem_index) {
-            bitmaps.push_back(&(it.second));
+            bitmaps.emplace_back(std::move(it.second));
         }
 
         uint32_t max_bitmap_size = 0;
@@ -461,7 +459,7 @@ private:
         options.write_value_index = false;
         options.encoding = EncodingInfo::get_default_encoding(bitmap_typeinfo->type(), false);
         // we already store compressed bitmap, use NO_COMPRESSION to save some cpu
-        options.compression = NO_COMPRESSION;
+        options.compression = LZ4;
 
         IndexedColumnWriter bitmap_column_writer(options, bitmap_typeinfo, wfile);
         RETURN_IF_ERROR(bitmap_column_writer.init());

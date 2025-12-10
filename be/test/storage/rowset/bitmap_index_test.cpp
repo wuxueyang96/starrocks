@@ -453,4 +453,185 @@ TEST_F(BitmapIndexTest, test_with_position) {
     }
 }
 
+TEST_F(BitmapIndexTest, test_with_position_ngram) {
+    // Test BitmapIndexWriter with both position tracking and ngram indexing enabled
+    // This combines two features:
+    // 1. Position tracking: each value stored as (rowid << 32 | position)
+    // 2. Ngram indexing: creates inverted index for character n-grams
+    const TypeInfoPtr type_info = get_type_info(TYPE_VARCHAR);
+    const std::string file_name = kTestDir + "/with_position_ngram";
+    constexpr int32_t gram_num = 2; // Use bigrams for testing
+
+    // Create test data: multiple values per row with overlapping n-grams
+    std::vector<std::vector<std::string>> rows{
+            {"hello", "help", "world"}, // row 0: has "he", "el", "ll", "lo", "he", "el", "lp", "wo", "or", "rl", "ld"
+            {"hero", "hello"},          // row 1: has "he", "er", "ro", "he", "el", "ll", "lo"
+            {"help", "world", "hero"},  // row 2: has "he", "el", "lp", "wo", "or", "rl", "ld", "he", "er", "ro"
+    };
+
+    ColumnIndexMetaPB meta;
+    {
+        ASSIGN_OR_ABORT(auto wfile, _fs->new_writable_file(file_name));
+
+        std::unique_ptr<BitmapIndexWriter> writer;
+        // Create writer with both position tracking and ngram indexing
+        BitmapIndexWriter::create(type_info, &writer, gram_num, true);
+
+        for (const auto& row : rows) {
+            for (const auto& val : row) {
+                Slice slice(val);
+                writer->add_value_with_current_rowid(&slice);
+            }
+            writer->incre_rowid();
+        }
+
+        ASSERT_TRUE(writer->finish(wfile.get(), &meta).ok());
+        ASSERT_EQ(BITMAP_INDEX, meta.type());
+        ASSERT_TRUE(wfile->close().ok());
+    }
+
+    {
+        BitmapIndexReader* reader = nullptr;
+        BitmapIndexIterator* iter = nullptr;
+        ASSIGN_OR_ABORT(auto rfile, _fs->new_random_access_file(file_name));
+        get_bitmap_reader_iter(rfile.get(), meta, &reader, &iter, gram_num, true);
+
+        // Verify the dictionary contains unique values (sorted)
+        // Unique values: "hello", "help", "hero", "world"
+        ASSERT_EQ(4, reader->bitmap_nums());
+
+        // Verify ngram dictionary was created
+        const size_t ngram_num = reader->ngram_bitmap_nums();
+        ASSERT_GT(ngram_num, 0); // Should have multiple n-grams
+
+        // Test 1: Verify position tracking for main dictionary
+        // "hello" appears at: row0:pos0, row1:pos1
+        {
+            Slice hello_slice("hello");
+            bool exact_match;
+            auto st = iter->seek_dictionary(&hello_slice, &exact_match);
+            ASSERT_TRUE(st.ok());
+            ASSERT_TRUE(exact_match);
+
+            detail::Roaring64Map bitmap;
+            ASSERT_TRUE(iter->read_bitmap64(iter->current_ordinal(), &bitmap).ok());
+
+            // Check it appears in row 0 and row 1
+            roaring::Roaring row_ids = bitmap.getAllHighBits();
+            ASSERT_EQ(2, row_ids.cardinality());
+            ASSERT_TRUE(row_ids.contains(0));
+            ASSERT_TRUE(row_ids.contains(1));
+
+            // Check positions: row0:pos0, row1:pos1
+            roaring::Roaring positions_row0 = bitmap.getLowBitsRoaring(0);
+            ASSERT_EQ(1, positions_row0.cardinality());
+            ASSERT_TRUE(positions_row0.contains(0));
+
+            roaring::Roaring positions_row1 = bitmap.getLowBitsRoaring(1);
+            ASSERT_EQ(1, positions_row1.cardinality());
+            ASSERT_TRUE(positions_row1.contains(1));
+        }
+
+        // Test 2: Verify position tracking for "help"
+        // "help" appears at: row0:pos1, row2:pos0
+        {
+            Slice help_slice("help");
+            bool exact_match;
+            auto st = iter->seek_dictionary(&help_slice, &exact_match);
+            ASSERT_TRUE(st.ok());
+            ASSERT_TRUE(exact_match);
+
+            detail::Roaring64Map bitmap;
+            ASSERT_TRUE(iter->read_bitmap64(iter->current_ordinal(), &bitmap).ok());
+
+            roaring::Roaring row_ids = bitmap.getAllHighBits();
+            ASSERT_EQ(2, row_ids.cardinality());
+            ASSERT_TRUE(row_ids.contains(0));
+            ASSERT_TRUE(row_ids.contains(2));
+
+            // Check positions: row0:pos1, row2:pos0
+            roaring::Roaring positions_row0 = bitmap.getLowBitsRoaring(0);
+            ASSERT_EQ(1, positions_row0.cardinality());
+            ASSERT_TRUE(positions_row0.contains(1));
+
+            roaring::Roaring positions_row2 = bitmap.getLowBitsRoaring(2);
+            ASSERT_EQ(1, positions_row2.cardinality());
+            ASSERT_TRUE(positions_row2.contains(0));
+        }
+
+        // Test 3: Read and verify ngram index
+        // The ngram "he" should map to dictionary offsets for words containing "he"
+        // "hello" (offset 0), "help" (offset 1), "hero" (offset 2) all contain "he"
+        {
+            size_t to_read = ngram_num;
+            const auto col = ChunkHelper::column_from_field_type(TYPE_VARCHAR, false);
+            ASSERT_TRUE(iter->next_batch_ngram(0, &to_read, col.get()).ok());
+            ASSERT_EQ(ngram_num, to_read);
+
+            ColumnViewer<TYPE_VARCHAR> viewer(std::move(col));
+            ASSERT_EQ(ngram_num, viewer.size());
+
+            // Find the "he" ngram in the ngram dictionary
+            bool found_he = false;
+            for (rowid_t i = 0; i < viewer.size(); ++i) {
+                auto ngram_value = viewer.value(i);
+                if (ngram_value.to_string() == "he") {
+                    found_he = true;
+
+                    // Read the ngram bitmap - it should map to dictionary entries (not positions)
+                    roaring::Roaring ngram_bitmap;
+                    ASSERT_TRUE(iter->read_ngram_bitmap(i, &ngram_bitmap).ok());
+
+                    // "he" appears in "hello" (dict offset 0), "help" (dict offset 1), "hero" (dict offset 2)
+                    ASSERT_EQ(3, ngram_bitmap.cardinality());
+                    ASSERT_TRUE(ngram_bitmap.contains(0)); // "hello"
+                    ASSERT_TRUE(ngram_bitmap.contains(1)); // "help"
+                    ASSERT_TRUE(ngram_bitmap.contains(2)); // "hero"
+                    break;
+                }
+            }
+            ASSERT_TRUE(found_he) << "N-gram 'he' should exist in ngram dictionary";
+        }
+
+        // Test 4: Verify ngram "wo" which appears in "world"
+        {
+            Slice wo_slice("wo");
+            roaring::Roaring wo_bitmap;
+            ASSERT_TRUE(iter->seek_dict_by_ngram(&wo_slice, &wo_bitmap).ok());
+
+            // "wo" only appears in "world" which is at dictionary offset 3
+            ASSERT_EQ(1, wo_bitmap.cardinality());
+            ASSERT_TRUE(wo_bitmap.contains(3)); // "world"
+        }
+
+        // Test 5: Combined test - use ngram to find words, then check positions
+        // Find all words containing "el" using ngram, then verify their positions
+        {
+            Slice el_slice("el");
+            roaring::Roaring el_bitmap;
+            ASSERT_TRUE(iter->seek_dict_by_ngram(&el_slice, &el_bitmap).ok());
+
+            // "el" appears in "hello" (offset 0) and "help" (offset 1)
+            ASSERT_EQ(2, el_bitmap.cardinality());
+            ASSERT_TRUE(el_bitmap.contains(0)); // "hello"
+            ASSERT_TRUE(el_bitmap.contains(1)); // "help"
+
+            // Now verify positions for "hello" using position-aware bitmap
+            Slice hello_slice("hello");
+            bool exact_match;
+            iter->seek_dictionary(&hello_slice, &exact_match);
+            ASSERT_TRUE(exact_match);
+
+            detail::Roaring64Map position_bitmap;
+            ASSERT_TRUE(iter->read_bitmap64(iter->current_ordinal(), &position_bitmap).ok());
+
+            // "hello" at row0:pos0 and row1:pos1
+            ASSERT_EQ(2, position_bitmap.cardinality());
+        }
+
+        delete reader;
+        delete iter;
+    }
+}
+
 } // namespace starrocks
