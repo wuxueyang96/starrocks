@@ -1,0 +1,17 @@
+# AWS Configuration
+aws:
+  region: ""
+  endpoint: ""
+  access_key_id: "ACCESS_KEY_ID"
+  access_key_secret: "ACCESS_KEY_SECRET"
+
+# S3 Configuration
+s3:
+  bucket_name: "your-bucket-name"
+  object_key: "path/to/your/file.parquet"
+
+# Parquet Reader Configuration
+# Columns specified by indices (0-based)
+parquet:
+  # column_indices: [0, 1, 2]  # Specify column indices to read, empty = all columns
+  index_output_path: "/tmp/inverted_index.bin"  # Path to save inverted index
