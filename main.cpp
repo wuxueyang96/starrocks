@@ -3,6 +3,7 @@
 #include <chrono>
 #include <vector>
 
+#include "bitmap_inverted_index.h"
 #include "arrow/api.h"
 
 #include "include/config.h"
@@ -28,6 +29,68 @@ std::vector<std::string> tokenize(const std::string& text) {
         tokens.push_back(current_token);
     }
     return tokens;
+}
+
+template <typename T>
+int build_inverted_index(const std::shared_ptr<arrow::Table>& table, const Config& config) {
+    // ========== Step 2: Build inverted index ==========
+    std::cout << "\n[Step 2] Building inverted index..." << std::endl;
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    T index;
+
+    // Process each column
+    for (int col_idx = 0; col_idx < table->num_columns(); ++col_idx) {
+        auto column = table->column(col_idx);
+
+        std::cout << "- processing column: " << col_idx << std::endl;
+
+        // Process each chunk in the column
+        for (int chunk_idx = 0; chunk_idx < column->num_chunks(); ++chunk_idx) {
+            auto chunk = column->chunk(chunk_idx);
+
+            std::cout << "  - processing chunk: " << chunk_idx << ", type " << chunk->type()->ToString() << std::endl;
+
+            // Handle string columns
+            if (chunk->type()->id() == arrow::Type::BINARY) {
+                auto string_array = std::static_pointer_cast<arrow::BinaryArray>(chunk);
+                for (int64_t row = 0; row < string_array->length(); ++row) {
+                    if (!string_array->IsNull(row)) {
+                        std::string text = string_array->GetString(row);
+                        auto doc_id = static_cast<uint32_t>(row);
+
+                        // Tokenize and add to index
+                        auto tokens = tokenize(text);
+                        for (uint32_t pos = 0; pos < tokens.size(); ++pos) {
+                            index.addTerm(tokens[pos], doc_id, pos);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    std::cout << "[Step 2] Completed in " << duration.count() << " ms" << std::endl;
+
+    // Print statistics
+    index.printStatistics();
+
+    // ========== Step 3: Save index to disk ==========
+    std::cout << "\n[Step 3] Saving inverted index to disk..." << std::endl;
+    std::cout << "Output path: " << config.index_output_path << std::endl;
+    start_time = std::chrono::high_resolution_clock::now();
+
+    if (!index.saveToDisk(config.index_output_path)) {
+        std::cerr << "Error: Failed to save index to disk" << std::endl;
+        return 1;
+    }
+
+    end_time = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    std::cout << "[Step 3] Completed in " << duration.count() << " ms" << std::endl;
+    return 0;
 }
 
 int main(int argc, char* argv[]) {
@@ -71,59 +134,16 @@ int main(int argc, char* argv[]) {
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
         std::cout << "[Step 1] Completed in " << duration.count() << " ms" << std::endl;
 
-        // ========== Step 2: Build inverted index ==========
-        std::cout << "\n[Step 2] Building inverted index..." << std::endl;
-        start_time = std::chrono::high_resolution_clock::now();
-
-        InvertedIndex index;
-
-        // Process each column
-        for (int col_idx = 0; col_idx < table->num_columns(); ++col_idx) {
-            auto column = table->column(col_idx);
-
-            // Process each chunk in the column
-            for (int chunk_idx = 0; chunk_idx < column->num_chunks(); ++chunk_idx) {
-                auto chunk = column->chunk(chunk_idx);
-
-                // Handle string columns
-                if (chunk->type()->id() == arrow::Type::STRING) {
-                    auto string_array = std::static_pointer_cast<arrow::StringArray>(chunk);
-                    for (int64_t row = 0; row < string_array->length(); ++row) {
-                        if (!string_array->IsNull(row)) {
-                            std::string text = string_array->GetString(row);
-                            auto doc_id = static_cast<uint32_t>(row);
-                            
-                            // Tokenize and add to index
-                            auto tokens = tokenize(text);
-                            for (uint32_t pos = 0; pos < tokens.size(); ++pos) {
-                                index.addTerm(tokens[pos], doc_id, pos);
-                            }
-                        }
-                    }
-                }
-            }
+        int ret = 0;
+        if (config.type == "bitmap") {
+            ret = build_inverted_index<BitmapInvertedIndex>(table, config);
+        } else {
+            ret = build_inverted_index<InvertedIndex>(table, config);
         }
 
-        end_time = std::chrono::high_resolution_clock::now();
-        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-        std::cout << "[Step 2] Completed in " << duration.count() << " ms" << std::endl;
-
-        // Print statistics
-        index.printStatistics();
-
-        // ========== Step 3: Save index to disk ==========
-        std::cout << "\n[Step 3] Saving inverted index to disk..." << std::endl;
-        std::cout << "Output path: " << config.index_output_path << std::endl;
-        start_time = std::chrono::high_resolution_clock::now();
-        
-        if (!index.saveToDisk(config.index_output_path)) {
-            std::cerr << "Error: Failed to save index to disk" << std::endl;
-            return 1;
+        if (ret != 0) {
+            return ret;
         }
-
-        end_time = std::chrono::high_resolution_clock::now();
-        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-        std::cout << "[Step 3] Completed in " << duration.count() << " ms" << std::endl;
 
         std::cout << "\n========================================" << std::endl;
         std::cout << "  Successfully completed!" << std::endl;

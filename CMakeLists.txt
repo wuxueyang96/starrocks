@@ -20,6 +20,8 @@ find_package(yaml-cpp REQUIRED)
 
 find_package(fmt REQUIRED)
 
+find_package(roaring REQUIRED)
+
 include_directories(include)
 FILE(GLOB SRC_FILES src/*.cpp)
 

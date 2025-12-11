@@ -1,3 +1,4 @@
+type: "bitmap" # [bitmap or delta]
 # AWS Configuration
 aws:
   region: ""

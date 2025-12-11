@@ -4,6 +4,7 @@
 #include <vector>
 
 struct Config {
+    std::string type;
     std::string region;
     std::string endpoint;
     std::string access_key_id;

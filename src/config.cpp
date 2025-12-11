@@ -9,6 +9,10 @@ Config Config::loadConfig(const std::string& config_path) {
     try {
         YAML::Node yaml = YAML::LoadFile(config_path);
 
+        if (yaml["type"]) {
+            config.type = yaml["type"].as<std::string>();
+        }
+
         if (yaml["aws"]) {
             auto aws = yaml["aws"];
             config.region = aws["region"].as<std::string>();
