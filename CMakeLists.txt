@@ -22,6 +22,11 @@ find_package(fmt REQUIRED)
 
 find_package(roaring REQUIRED)
 
+# Add compression libraries
+find_package(lz4 REQUIRED)
+find_package(Snappy REQUIRED)
+find_package(zstd REQUIRED)
+
 include_directories(include)
 FILE(GLOB SRC_FILES src/*.cpp)
 
@@ -34,4 +39,7 @@ target_link_libraries(inverted_index_poc
     ${AWSSDK_LINK_LIBRARIES}
     yaml-cpp
     fmt
-    roaring::roaring)
+    roaring::roaring
+    lz4::lz4
+    Snappy::snappy
+    zstd::libzstd_shared)

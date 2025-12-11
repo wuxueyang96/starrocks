@@ -44,12 +44,30 @@ size_t InvertedIndex::getTotalPostings() const {
     return total;
 }
 
-bool InvertedIndex::saveToDisk(const std::string& file_path) const {
+bool InvertedIndex::saveToDisk(const std::string& file_path, 
+                              CompressionType compression,
+                              EncodingType encoding) const {
     std::ofstream file(file_path, std::ios::binary);
     if (!file) {
         std::cerr << "Error: Cannot open file for writing: " << file_path << std::endl;
         return false;
     }
+
+    // Write magic number for file format identification
+    const uint32_t magic = 0x49444558; // "IDEX" in hex
+    file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+
+    // Write version
+    const uint32_t version = 1;
+    file.write(reinterpret_cast<const char*>(&version), sizeof(version));
+
+    // Write compression type
+    const uint8_t comp_type = static_cast<uint8_t>(compression);
+    file.write(reinterpret_cast<const char*>(&comp_type), sizeof(comp_type));
+
+    // Write encoding type
+    const uint8_t enc_type = static_cast<uint8_t>(encoding);
+    file.write(reinterpret_cast<const char*>(&enc_type), sizeof(enc_type));
 
     // Write number of terms
     const auto num_terms = static_cast<uint32_t>(index_.size());
@@ -62,14 +80,39 @@ bool InvertedIndex::saveToDisk(const std::string& file_path) const {
         file.write(reinterpret_cast<const char*>(&term_length), sizeof(term_length));
         file.write(term.c_str(), term_length);
 
-        // Encode and write posting list
-        std::vector<uint8_t> encoded = posting_list.encode();
-        const auto encoded_size = static_cast<uint32_t>(encoded.size());
-        file.write(reinterpret_cast<const char*>(&encoded_size), sizeof(encoded_size));
-        file.write(reinterpret_cast<const char*>(encoded.data()), encoded_size);
+        // Encode posting list
+        std::vector<uint8_t> encoded = posting_list.encode(encoding);
+        const auto uncompressed_size = static_cast<uint32_t>(encoded.size());
+
+        // Apply compression if specified
+        std::vector<uint8_t> final_data;
+        if (compression != CompressionType::NONE) {
+            final_data = CompressionUtil::compress(encoded, compression);
+        } else {
+            final_data = encoded;
+        }
+
+        // Write uncompressed size (needed for decompression)
+        file.write(reinterpret_cast<const char*>(&uncompressed_size), sizeof(uncompressed_size));
+
+        // Write compressed/encoded size and data
+        const auto final_size = static_cast<uint32_t>(final_data.size());
+        file.write(reinterpret_cast<const char*>(&final_size), sizeof(final_size));
+        file.write(reinterpret_cast<const char*>(final_data.data()), final_size);
     }
 
     file.close();
+    
+    std::string encoding_name;
+    switch (encoding) {
+        case EncodingType::VARINT: encoding_name = "VarInt"; break;
+        case EncodingType::FOR_VARINT: encoding_name = "FOR+VarInt"; break;
+        case EncodingType::PFOR_DELTA: encoding_name = "PForDelta"; break;
+        default: encoding_name = "Unknown"; break;
+    }
+    
+    std::cout << "Index saved with compression: " << CompressionUtil::compressionTypeToString(compression)
+              << ", encoding: " << encoding_name << std::endl;
     return true;
 }
 
@@ -81,6 +124,32 @@ bool InvertedIndex::loadFromDisk(const std::string& file_path) {
     }
 
     clear();
+
+    // Read magic number
+    uint32_t magic;
+    file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    if (magic != 0x49444558) {
+        std::cerr << "Error: Invalid file format" << std::endl;
+        return false;
+    }
+
+    // Read version
+    uint32_t version;
+    file.read(reinterpret_cast<char*>(&version), sizeof(version));
+    if (version != 1) {
+        std::cerr << "Error: Unsupported file version: " << version << std::endl;
+        return false;
+    }
+
+    // Read compression type
+    uint8_t comp_type;
+    file.read(reinterpret_cast<char*>(&comp_type), sizeof(comp_type));
+    const CompressionType compression = static_cast<CompressionType>(comp_type);
+
+    // Read encoding type
+    uint8_t enc_type;
+    file.read(reinterpret_cast<char*>(&enc_type), sizeof(enc_type));
+    const EncodingType encoding = static_cast<EncodingType>(enc_type);
 
     // Read number of terms
     uint32_t num_terms;
@@ -95,18 +164,42 @@ bool InvertedIndex::loadFromDisk(const std::string& file_path) {
         std::string term(term_length, '\0');
         file.read(&term[0], term_length);
 
-        // Read encoded posting list
+        // Read uncompressed size
+        uint32_t uncompressed_size;
+        file.read(reinterpret_cast<char*>(&uncompressed_size), sizeof(uncompressed_size));
+
+        // Read compressed/encoded size
         uint32_t encoded_size;
         file.read(reinterpret_cast<char*>(&encoded_size), sizeof(encoded_size));
 
-        std::vector<uint8_t> encoded(encoded_size);
-        file.read(reinterpret_cast<char*>(encoded.data()), encoded_size);
+        // Read compressed/encoded data
+        std::vector<uint8_t> compressed_data(encoded_size);
+        file.read(reinterpret_cast<char*>(compressed_data.data()), encoded_size);
+
+        // Decompress if needed
+        std::vector<uint8_t> encoded_data;
+        if (compression != CompressionType::NONE) {
+            encoded_data = CompressionUtil::decompress(compressed_data, compression, uncompressed_size);
+        } else {
+            encoded_data = compressed_data;
+        }
 
         // Decode posting list
-        index_[term].decode(encoded);
+        index_[term].decode(encoded_data, encoding);
     }
 
     file.close();
+    
+    std::string encoding_name;
+    switch (encoding) {
+        case EncodingType::VARINT: encoding_name = "VarInt"; break;
+        case EncodingType::FOR_VARINT: encoding_name = "FOR+VarInt"; break;
+        case EncodingType::PFOR_DELTA: encoding_name = "PForDelta"; break;
+        default: encoding_name = "Unknown"; break;
+    }
+    
+    std::cout << "Index loaded with compression: " << CompressionUtil::compressionTypeToString(compression)
+              << ", encoding: " << encoding_name << std::endl;
     return true;
 }
 

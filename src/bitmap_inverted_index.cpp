@@ -10,15 +10,8 @@ BitmapInvertedIndex::BitmapInvertedIndex() = default;
 BitmapInvertedIndex::~BitmapInvertedIndex() = default;
 
 void BitmapInvertedIndex::addTerm(const std::string &term, uint32_t doc_id, uint32_t position) {
-    if (_index.find(term) == _index.end()) {
-        _index[term] = roaring::Roaring64Map();
-    }
     const uint64_t val = static_cast<uint64_t>(doc_id) << 32 | static_cast<uint64_t>(position);
     _index[term].add(val);
-
-    if (_dict_to_docs.find(term) == _dict_to_docs.end()) {
-        _dict_to_docs[term] = roaring::Roaring();
-    }
     _dict_to_docs[term].add(doc_id);
 }
 

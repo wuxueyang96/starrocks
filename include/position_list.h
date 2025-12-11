@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <string>
+#include "encoding_util.h"
 
 class PositionList {
 public:
@@ -11,11 +12,11 @@ public:
     // Add a position to the list
     void addPosition(uint32_t position);
 
-    // Encode the position list using delta encoding and variable-length integers
-    std::vector<uint8_t> encode() const;
+    // Encode the position list using specified encoding type
+    std::vector<uint8_t> encode(EncodingType encoding_type = EncodingType::FOR_VARINT) const;
 
     // Decode from compressed bytes back to positions
-    void decode(const std::vector<uint8_t>& encoded_data);
+    void decode(const std::vector<uint8_t>& encoded_data, EncodingType encoding_type = EncodingType::FOR_VARINT);
 
     // Get all positions
     const std::vector<uint32_t>& getPositions() const;
@@ -27,16 +28,10 @@ public:
     void clear();
 
     // Get compressed size (after encoding)
-    size_t getCompressedSize() const;
+    size_t getCompressedSize(EncodingType encoding_type = EncodingType::FOR_VARINT) const;
 
     // Get uncompressed size
     size_t getUncompressedSize() const;
-
-    // Variable-length integer encoding (VByte encoding) - made public for reuse
-    static void encodeVarInt(uint32_t value, std::vector<uint8_t>& output);
-
-    // Variable-length integer decoding
-    static uint32_t decodeVarInt(const std::vector<uint8_t>& input, size_t& offset);
 
 private:
     std::vector<uint32_t> positions_;

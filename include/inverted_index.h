@@ -4,6 +4,8 @@
 #include <vector>
 #include <unordered_map>
 #include "posting_list.h"
+#include "compression_util.h"
+#include "encoding_util.h"
 
 // InvertedIndex: maps terms to posting lists
 class InvertedIndex {
@@ -26,8 +28,10 @@ public:
     // Get total number of postings
     size_t getTotalPostings() const;
 
-    // Save index to disk
-    bool saveToDisk(const std::string& file_path) const;
+    // Save index to disk with optional compression
+    bool saveToDisk(const std::string& file_path, 
+                   CompressionType compression = CompressionType::NONE,
+                   EncodingType encoding = EncodingType::FOR_VARINT) const;
 
     // Load index from disk
     bool loadFromDisk(const std::string& file_path);

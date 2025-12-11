@@ -80,6 +80,82 @@ int build_inverted_index(const std::shared_ptr<arrow::Table>& table, const Confi
     // ========== Step 3: Save index to disk ==========
     std::cout << "\n[Step 3] Saving inverted index to disk..." << std::endl;
     std::cout << "Output path: " << config.index_output_path << std::endl;
+    std::cout << "Compression: " << config.compression_type << std::endl;
+    std::cout << "Encoding: " << config.encoding_type << std::endl;
+    start_time = std::chrono::high_resolution_clock::now();
+
+    // Parse compression and encoding types
+    CompressionType compression = CompressionUtil::stringToCompressionType(config.compression_type);
+    EncodingType encoding = EncodingType::VARINT;
+    if (config.encoding_type == "for" || config.encoding_type == "FOR") {
+        encoding = EncodingType::FOR_VARINT;
+    } else if (config.encoding_type == "pfor" || config.encoding_type == "PFOR" || 
+               config.encoding_type == "pfordelta" || config.encoding_type == "PFORDELTA") {
+        encoding = EncodingType::PFOR_DELTA;
+    }
+
+    if (!index.saveToDisk(config.index_output_path, compression, encoding)) {
+        std::cerr << "Error: Failed to save index to disk" << std::endl;
+        return 1;
+    }
+
+    end_time = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    std::cout << "[Step 3] Completed in " << duration.count() << " ms" << std::endl;
+    return 0;
+}
+
+// Specialization for BitmapInvertedIndex (doesn't support compression/encoding yet)
+template<>
+int build_inverted_index<BitmapInvertedIndex>(const std::shared_ptr<arrow::Table>& table, const Config& config) {
+    // ========== Step 2: Build inverted index ==========
+    std::cout << "\n[Step 2] Building inverted index..." << std::endl;
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    BitmapInvertedIndex index;
+
+    // Process each column
+    for (int col_idx = 0; col_idx < table->num_columns(); ++col_idx) {
+        auto column = table->column(col_idx);
+
+        std::cout << "- processing column: " << col_idx << std::endl;
+
+        // Process each chunk in the column
+        for (int chunk_idx = 0; chunk_idx < column->num_chunks(); ++chunk_idx) {
+            auto chunk = column->chunk(chunk_idx);
+
+            std::cout << "  - processing chunk: " << chunk_idx << ", type " << chunk->type()->ToString() << std::endl;
+
+            // Handle string columns
+            if (chunk->type()->id() == arrow::Type::BINARY) {
+                auto string_array = std::static_pointer_cast<arrow::BinaryArray>(chunk);
+                for (int64_t row = 0; row < string_array->length(); ++row) {
+                    if (!string_array->IsNull(row)) {
+                        std::string text = string_array->GetString(row);
+                        auto doc_id = static_cast<uint32_t>(row);
+
+                        // Tokenize and add to index
+                        auto tokens = tokenize(text);
+                        for (uint32_t pos = 0; pos < tokens.size(); ++pos) {
+                            index.addTerm(tokens[pos], doc_id, pos);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    std::cout << "[Step 2] Completed in " << duration.count() << " ms" << std::endl;
+
+    // Print statistics
+    index.printStatistics();
+
+    // ========== Step 3: Save index to disk ==========
+    std::cout << "\n[Step 3] Saving inverted index to disk..." << std::endl;
+    std::cout << "Output path: " << config.index_output_path << std::endl;
+    std::cout << "Note: BitmapInvertedIndex uses its own format (compression/encoding not yet supported)" << std::endl;
     start_time = std::chrono::high_resolution_clock::now();
 
     if (!index.saveToDisk(config.index_output_path)) {

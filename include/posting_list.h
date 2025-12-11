@@ -4,6 +4,7 @@
 #include <unordered_map>
 
 #include "position_list.h"
+#include "encoding_util.h"
 
 // Posting: document ID + position list
 struct Posting {
@@ -30,14 +31,10 @@ public:
     size_t getDocFrequency() const;
 
     // Encode the posting list using delta encoding and variable-length integers
-    std::vector<uint8_t> encode() const;
+    std::vector<uint8_t> encode(EncodingType encoding_type = EncodingType::FOR_VARINT) const;
 
     // Decode from compressed bytes
-    void decode(const std::vector<uint8_t>& encoded_data);
-
-    static void encodeVarInt(uint32_t value, std::vector<uint8_t>& output);
-
-    static uint32_t decodeVarInt(const std::vector<uint8_t>& input, size_t& offset);
+    void decode(const std::vector<uint8_t>& encoded_data, EncodingType encoding_type = EncodingType::FOR_VARINT);
 
 private:
     std::vector<Posting> postings_;

@@ -38,6 +38,18 @@ Config Config::loadConfig(const std::string& config_path) {
             config.index_output_path = yaml["inverted_index"]["index_output_path"].as<std::string>();
         }
 
+        // Load compression settings
+        config.compression_type = "none";
+        if (yaml["parquet"] && yaml["parquet"]["compression"]) {
+            config.compression_type = yaml["parquet"]["compression"].as<std::string>();
+        }
+
+        // Load encoding settings
+        config.encoding_type = "pfor";
+        if (yaml["parquet"] && yaml["parquet"]["encoding"]) {
+            config.encoding_type = yaml["parquet"]["encoding"].as<std::string>();
+        }
+
     } catch (const YAML::Exception& e) {
         std::cerr << "Error loading config file: " << e.what() << std::endl;
         throw;
