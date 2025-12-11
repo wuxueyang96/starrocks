@@ -30,7 +30,7 @@ Config Config::loadConfig(const std::string& config_path) {
         }
 
         config.index_output_path = "/tmp/inverted_index.bin";
-        if (yaml["inverted_index"] && yaml["index_output_path"]["index_output_path"]) {
+        if (yaml["inverted_index"] && yaml["inverted_index"]["index_output_path"]) {
             config.index_output_path = yaml["inverted_index"]["index_output_path"].as<std::string>();
         }
 
