@@ -29,9 +29,13 @@ public:
     size_t getTotalPostings() const;
 
     // Save index to disk with optional compression
+    // encoding_type can be VARINT, FOR_VARINT, PFOR_DELTA, or ADAPTIVE
+    // In ADAPTIVE mode, each posting list chooses its own best encoding
+    // block_config enables block-level encoding within position lists
     bool saveToDisk(const std::string& file_path, 
                    CompressionType compression = CompressionType::NONE,
-                   EncodingType encoding = EncodingType::FOR_VARINT) const;
+                   EncodingType encoding = EncodingType::ADAPTIVE,
+                   const BlockEncodingConfig* block_config = nullptr) const;
 
     // Load index from disk
     bool loadFromDisk(const std::string& file_path);

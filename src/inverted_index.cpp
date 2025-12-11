@@ -46,7 +46,8 @@ size_t InvertedIndex::getTotalPostings() const {
 
 bool InvertedIndex::saveToDisk(const std::string& file_path, 
                               CompressionType compression,
-                              EncodingType encoding) const {
+                              EncodingType encoding,
+                              const BlockEncodingConfig* block_config) const {
     std::ofstream file(file_path, std::ios::binary);
     if (!file) {
         std::cerr << "Error: Cannot open file for writing: " << file_path << std::endl;
@@ -80,8 +81,8 @@ bool InvertedIndex::saveToDisk(const std::string& file_path,
         file.write(reinterpret_cast<const char*>(&term_length), sizeof(term_length));
         file.write(term.c_str(), term_length);
 
-        // Encode posting list
-        std::vector<uint8_t> encoded = posting_list.encode(encoding);
+        // Encode posting list with block configuration
+        std::vector<uint8_t> encoded = posting_list.encode(encoding, block_config);
         const auto uncompressed_size = static_cast<uint32_t>(encoded.size());
 
         // Apply compression if specified
@@ -108,7 +109,12 @@ bool InvertedIndex::saveToDisk(const std::string& file_path,
         case EncodingType::VARINT: encoding_name = "VarInt"; break;
         case EncodingType::FOR_VARINT: encoding_name = "FOR+VarInt"; break;
         case EncodingType::PFOR_DELTA: encoding_name = "PForDelta"; break;
+        case EncodingType::ADAPTIVE: encoding_name = "Adaptive (Mixed)"; break;
         default: encoding_name = "Unknown"; break;
+    }
+    
+    if (block_config != nullptr && block_config->enable_block_encoding) {
+        encoding_name += " + Block(" + std::to_string(block_config->block_size) + ")";
     }
     
     std::cout << "Index saved with compression: " << CompressionUtil::compressionTypeToString(compression)
@@ -184,8 +190,8 @@ bool InvertedIndex::loadFromDisk(const std::string& file_path) {
             encoded_data = compressed_data;
         }
 
-        // Decode posting list
-        index_[term].decode(encoded_data, encoding);
+        // Decode posting list (encoding type is stored in the data)
+        index_[term].decode(encoded_data);
     }
 
     file.close();
@@ -195,6 +201,7 @@ bool InvertedIndex::loadFromDisk(const std::string& file_path) {
         case EncodingType::VARINT: encoding_name = "VarInt"; break;
         case EncodingType::FOR_VARINT: encoding_name = "FOR+VarInt"; break;
         case EncodingType::PFOR_DELTA: encoding_name = "PForDelta"; break;
+        case EncodingType::ADAPTIVE: encoding_name = "Adaptive (Mixed)"; break;
         default: encoding_name = "Unknown"; break;
     }
     

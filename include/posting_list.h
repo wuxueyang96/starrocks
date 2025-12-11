@@ -31,10 +31,13 @@ public:
     size_t getDocFrequency() const;
 
     // Encode the posting list using delta encoding and variable-length integers
-    std::vector<uint8_t> encode(EncodingType encoding_type = EncodingType::FOR_VARINT) const;
+    // In ADAPTIVE mode, each position list can use different encoding
+    // With block_config, position lists can be chunked for even finer-grained encoding
+    std::vector<uint8_t> encode(EncodingType encoding_type, 
+                               const BlockEncodingConfig* block_config = nullptr) const;
 
     // Decode from compressed bytes
-    void decode(const std::vector<uint8_t>& encoded_data, EncodingType encoding_type = EncodingType::FOR_VARINT);
+    void decode(const std::vector<uint8_t>& encoded_data);
 
 private:
     std::vector<Posting> postings_;

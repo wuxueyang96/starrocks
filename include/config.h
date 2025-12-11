@@ -4,6 +4,7 @@
 #include <vector>
 #include "compression_util.h"
 #include "encoding_util.h"
+#include "position_list.h"
 
 struct Config {
     std::string type;
@@ -16,7 +17,9 @@ struct Config {
     std::vector<int32_t> column_indices;  // Column indices to read
     std::string index_output_path;    // Path to save inverted index
     std::string compression_type;     // Compression algorithm: none, lz4, snappy, zstd
-    std::string encoding_type;        // Encoding type: varint, for, pfor
+    std::string encoding_type;        // Encoding type: varint, for, pfor, adaptive
+    bool enable_block_encoding = false;  // Enable block-level encoding
+    size_t block_size = 128;          // Block size for block encoding
 
     static Config loadConfig(const std::string& config_path);
 };
