@@ -21,7 +21,7 @@ find_package(yaml-cpp REQUIRED)
 find_package(fmt REQUIRED)
 
 include_directories(include)
-FILE(GLOB SRC_FILES src)
+FILE(GLOB SRC_FILES src/*.cpp)
 
 add_executable(inverted_index_poc main.cpp ${SRC_FILES})
 
@@ -30,5 +30,5 @@ target_link_libraries(inverted_index_poc
     Arrow::arrow_shared
     Parquet::parquet_shared
     ${AWSSDK_LINK_LIBRARIES}
-    yaml-cpp
+    yaml-cpp:yaml-cpp
     fmt)
