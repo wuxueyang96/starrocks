@@ -33,4 +33,5 @@ target_link_libraries(inverted_index_poc
     Parquet::parquet_shared
     ${AWSSDK_LINK_LIBRARIES}
     yaml-cpp
-    fmt)
+    fmt
+    roaring::roaring)

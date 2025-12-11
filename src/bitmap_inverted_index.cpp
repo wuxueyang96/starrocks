@@ -1,5 +1,3 @@
-#pragma once
-
 #include "bitmap_inverted_index.h"
 
 #include <iostream>
@@ -73,21 +71,21 @@ bool BitmapInvertedIndex::saveToDisk(const std::string &file_path) const {
 
         posting_list.runOptimize();
 
-        size_t size = posting_list.getSizeInBytes();
+        size_t size = posting_list.getSizeInBytes(false);
 
-        std::string buf;
-        buf.reserve(size);
+        std::string buf(size, '\0');
 
         posting_list.write(buf.data(), false);
 
         file.write(reinterpret_cast<const char*>(&size), sizeof(size));
 
         const char* ptr = buf.data();
+        size_t remaining = size;
         size_t offset = 0;
-        const uint32_t byte_to_write = std::min(size, static_cast<size_t>(std::numeric_limits<int32_t>::max()));
-        while (size > 0) {
+        while (remaining > 0) {
+            const uint32_t byte_to_write = std::min(remaining, static_cast<size_t>(std::numeric_limits<int32_t>::max()));
             file.write(ptr + offset, byte_to_write);
-            size -= byte_to_write;
+            remaining -= byte_to_write;
             offset += byte_to_write;
         }
     }
@@ -123,7 +121,7 @@ bool BitmapInvertedIndex::loadFromDisk(const std::string &file_path) {
         file.read(reinterpret_cast<char*>(&encoded_size), sizeof(encoded_size));
 
         std::string encoded;
-        encoded.reserve(encoded_size);
+        encoded.resize(encoded_size);
 
         char* ptr = encoded.data();
         size_t offset = 0;
