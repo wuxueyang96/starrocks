@@ -30,5 +30,5 @@ target_link_libraries(inverted_index_poc
     Arrow::arrow_shared
     Parquet::parquet_shared
     ${AWSSDK_LINK_LIBRARIES}
-    yaml-cpp:yaml-cpp
+    yaml-cpp
     fmt)

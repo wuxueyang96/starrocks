@@ -4,7 +4,7 @@
 
 #include "yaml-cpp/yaml.h"
 
-Config loadConfig(const std::string& config_path) {
+Config Config::loadConfig(const std::string& config_path) {
     Config config;
     try {
         YAML::Node yaml = YAML::LoadFile(config_path);
