@@ -38,6 +38,28 @@ uint32_t VarIntEncoder::decodeValue(const uint8_t** input) {
     return result;
 }
 
+uint32_t VarIntEncoder::decodeValue(const std::vector<uint8_t>& data, size_t& offset) {
+    if (offset >= data.size()) {
+        throw std::runtime_error("Invalid offset in decodeVarInt");
+    }
+
+    uint32_t result = 0;
+    int shift = 0;
+
+    while (offset < data.size()) {
+        const uint8_t byte = data[offset++];
+        result |= static_cast<uint32_t>(byte & 0x7F) << shift;
+        if ((byte & 0x80) == 0) {
+            break;
+        }
+        shift += 7;
+        if (shift > 28) {
+            throw std::runtime_error("VarInt too large");
+        }
+    }
+    return result;
+}
+
 std::vector<uint8_t> VarIntEncoder::encode(const std::vector<uint32_t>& values, const size_t start, const size_t end) {
     if (values.empty() || start >= end || end > values.size()) {
         return {};
@@ -56,7 +78,7 @@ std::vector<uint8_t> VarIntEncoder::encode(const std::vector<uint32_t>& values, 
     return encoded;
 }
 
-std::vector<uint32_t> VarIntEncoder::decode(const uint8_t* encoded) {
+std::vector<uint32_t> VarIntEncoder::decode(const uint8_t* encoded, size_t size) {
     if (encoded == nullptr) {
         return {};
     }

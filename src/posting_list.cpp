@@ -4,6 +4,8 @@
 #include <stdexcept>
 #include <utility>
 
+#include "varint_encoder.h"
+
 // ==================== PostingList Implementation ====================
 
 PostingList::PostingList() = default;
@@ -31,11 +33,11 @@ size_t PostingList::getDocFrequency() const {
     return postings_.size();
 }
 
-std::vector<uint8_t> PostingList::encode(EncodingType encoding_type, const BlockEncodingConfig* block_config) const {
+std::vector<uint8_t> PostingList::encode(EncodingType encoding_type) const {
     std::vector<uint8_t> encoded;
 
     // Encode number of postings
-    EncodingUtil::encodeVarInt(static_cast<uint32_t>(postings_.size()), encoded);
+    VarIntEncoder::encodeValue(static_cast<uint32_t>(postings_.size()), encoded);
 
     if (postings_.empty()) {
         return encoded;
@@ -47,25 +49,21 @@ std::vector<uint8_t> PostingList::encode(EncodingType encoding_type, const Block
               [](const Posting& a, const Posting& b) { return a.doc_id < b.doc_id; });
 
     // Encode first doc_id
-    EncodingUtil::encodeVarInt(sorted_postings[0].doc_id, encoded);
+    VarIntEncoder::encodeValue(sorted_postings[0].doc_id, encoded);
 
-    // Encode first position list with block configuration
-    auto pos_encoded = sorted_postings[0].positions.encode(encoding_type, block_config);
+    // Encode first position list (block encoding is always enabled)
+    auto pos_encoded = sorted_postings[0].positions.encode(encoding_type);
+    VarIntEncoder::encodeValue(static_cast<uint32_t>(pos_encoded.size()), encoded);
     encoded.insert(encoded.end(), pos_encoded.begin(), pos_encoded.end());
 
     // Encode subsequent doc_ids using delta encoding
     for (size_t i = 1; i < sorted_postings.size(); ++i) {
         const uint32_t delta = sorted_postings[i].doc_id - sorted_postings[i - 1].doc_id;
-        EncodingUtil::encodeVarInt(delta, encoded);
+        VarIntEncoder::encodeValue(delta, encoded);
 
-        // Encode position list with potentially different encoding per list
-        actual_encoding = encoding_type;
-        auto pos_data = sorted_postings[i].positions.encode(encoding_type, actual_encoding, block_config);
-
-        // Store the actual encoding type used
-        encoded.push_back(static_cast<uint8_t>(actual_encoding));
-
-        EncodingUtil::encodeVarInt(static_cast<uint32_t>(pos_data.size()), encoded);
+        // Encode position list
+        auto pos_data = sorted_postings[i].positions.encode(encoding_type);
+        VarIntEncoder::encodeValue(static_cast<uint32_t>(pos_data.size()), encoded);
         encoded.insert(encoded.end(), pos_data.begin(), pos_data.end());
     }
 
@@ -80,50 +78,39 @@ void PostingList::decode(const std::vector<uint8_t>& encoded_data) {
         return;
     }
 
-    size_t offset = 0;
+    const uint8_t* ptr = encoded_data.data();
 
     // Decode number of postings
-    const uint32_t num_postings = EncodingUtil::decodeVarInt(encoded_data, offset);
+    const uint32_t num_postings = VarIntEncoder::decodeValue(&ptr);
 
     if (num_postings == 0) {
         return;
     }
 
     // Decode first doc_id
-    uint32_t current_doc_id = EncodingUtil::decodeVarInt(encoded_data, offset);
-
-    // Decode encoding type for first position list
-    if (offset >= encoded_data.size()) {
-        throw std::runtime_error("Invalid encoded data: missing encoding type");
-    }
-    auto encoding_type = static_cast<EncodingType>(encoded_data[offset++]);
+    uint32_t current_doc_id = VarIntEncoder::decodeValue(&ptr);
 
     // Decode first position list
-    uint32_t pos_size = EncodingUtil::decodeVarInt(encoded_data, offset);
-    std::vector<uint8_t> pos_data(encoded_data.begin() + offset, encoded_data.begin() + offset + pos_size);
-    offset += pos_size;
+    uint32_t pos_size = VarIntEncoder::decodeValue(&ptr);
+    std::vector<uint8_t> pos_data(ptr, ptr + pos_size);
+    ptr += pos_size;
 
     postings_.emplace_back(current_doc_id);
-    postings_.back().positions.decode(pos_data, encoding_type);
+    // Note: EncodingType is not stored anymore, we'll detect it from the data format
+    postings_.back().positions.decode(pos_data, EncodingType::ADAPTIVE);
     doc_to_index_[current_doc_id] = 0;
 
     // Decode subsequent postings
     for (uint32_t i = 1; i < num_postings; ++i) {
-        const uint32_t delta = EncodingUtil::decodeVarInt(encoded_data, offset);
+        const uint32_t delta = VarIntEncoder::decodeValue(&ptr);
         current_doc_id += delta;
 
-        // Decode encoding type for this position list
-        if (offset >= encoded_data.size()) {
-            throw std::runtime_error("Invalid encoded data: missing encoding type");
-        }
-        encoding_type = static_cast<EncodingType>(encoded_data[offset++]);
-
-        pos_size = EncodingUtil::decodeVarInt(encoded_data, offset);
-        pos_data = std::vector<uint8_t>(encoded_data.begin() + offset, encoded_data.begin() + offset + pos_size);
-        offset += pos_size;
+        pos_size = VarIntEncoder::decodeValue(&ptr);
+        pos_data = std::vector<uint8_t>(ptr, ptr + pos_size);
+        ptr += pos_size;
 
         postings_.emplace_back(current_doc_id);
-        postings_.back().positions.decode(pos_data, encoding_type);
+        postings_.back().positions.decode(pos_data, EncodingType::ADAPTIVE);
         doc_to_index_[current_doc_id] = postings_.size() - 1;
     }
 }

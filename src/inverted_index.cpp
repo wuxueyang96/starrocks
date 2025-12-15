@@ -44,8 +44,7 @@ size_t InvertedIndex::getTotalPostings() const {
     return total;
 }
 
-bool InvertedIndex::saveToDisk(const std::string& file_path, CompressionType compression, EncodingType encoding,
-                               const BlockEncodingConfig* block_config) const {
+bool InvertedIndex::saveToDisk(const std::string& file_path, CompressionType compression, EncodingType encoding) const {
     std::ofstream file(file_path, std::ios::binary);
     if (!file) {
         std::cerr << "Error: Cannot open file for writing: " << file_path << std::endl;
@@ -79,8 +78,8 @@ bool InvertedIndex::saveToDisk(const std::string& file_path, CompressionType com
         file.write(reinterpret_cast<const char*>(&term_length), sizeof(term_length));
         file.write(term.c_str(), term_length);
 
-        // Encode posting list with block configuration
-        std::vector<uint8_t> encoded = posting_list.encode(encoding, block_config);
+        // Encode posting list (block encoding is always enabled)
+        std::vector<uint8_t> encoded = posting_list.encode(encoding);
         const auto uncompressed_size = static_cast<uint32_t>(encoded.size());
 
         // Apply compression if specified
@@ -121,9 +120,8 @@ bool InvertedIndex::saveToDisk(const std::string& file_path, CompressionType com
         break;
     }
 
-    if (block_config != nullptr && block_config->enable_block_encoding) {
-        encoding_name += " + Block(" + std::to_string(block_config->block_size) + ")";
-    }
+    // Block encoding is always enabled with block size 128
+    encoding_name += " + Block(128)";
 
     std::cout << "Index saved with compression: " << CompressionUtil::compressionTypeToString(compression)
               << ", encoding: " << encoding_name << std::endl;

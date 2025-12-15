@@ -50,17 +50,6 @@ Config Config::loadConfig(const std::string& config_path) {
             config.encoding_type = yaml["parquet"]["encoding"].as<std::string>();
         }
 
-        // Load block encoding settings
-        config.enable_block_encoding = false;
-        if (yaml["parquet"] && yaml["parquet"]["enable_block_encoding"]) {
-            config.enable_block_encoding = yaml["parquet"]["enable_block_encoding"].as<bool>();
-        }
-
-        config.block_size = 128;
-        if (yaml["parquet"] && yaml["parquet"]["block_size"]) {
-            config.block_size = yaml["parquet"]["block_size"].as<size_t>();
-        }
-
     } catch (const YAML::Exception& e) {
         std::cerr << "Error loading config file: " << e.what() << std::endl;
         throw;

@@ -4,12 +4,6 @@
 
 #include "encoder_factory.h"
 
-// Configuration for block encoding
-struct BlockEncodingConfig {
-    size_t block_size = 128;           // Default block size for chunking
-    bool enable_block_encoding = true; // Enable block-level encoding
-};
-
 class PositionList {
 public:
     PositionList();
@@ -20,8 +14,8 @@ public:
 
     // Encode the position list using specified encoding type
     // If encoding_type is ADAPTIVE, it will choose the best encoding automatically
-    // With block_config, positions can be chunked and encoded separately
-    std::vector<uint8_t> encode(const EncodingType& encoding_type, const BlockEncodingConfig* block_config = nullptr) const;
+    // All position lists are encoded in blocks with default block size of 128
+    std::vector<uint8_t> encode(const EncodingType& encoding_type) const;
 
     // Decode from compressed bytes back to positions
     void decode(const std::vector<uint8_t>& encoded_data, const EncodingType& encoding_type);
@@ -36,8 +30,9 @@ public:
     void clear();
 
 private:
+    static constexpr size_t BLOCK_SIZE = 128; // Fixed block size for chunking
     std::vector<uint32_t> positions_;
 
     // Encode positions using block-based approach
-    std::vector<uint8_t> encodeWithBlocks(const std::shared_ptr<Encoder>& encoder, const BlockEncodingConfig& config) const;
+    std::vector<uint8_t> encodeWithBlocks(const std::shared_ptr<Encoder>& encoder) const;
 };

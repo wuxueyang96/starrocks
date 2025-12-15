@@ -16,9 +16,14 @@ include_directories(${PARQUET_INCLUDE_DIR})
 find_package(AWSSDK REQUIRED COMPONENTS s3)
 
 # Add yaml-cpp for configuration
-find_package(yaml-cpp REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(YAML_CPP REQUIRED yaml-cpp)
+include_directories(${YAML_CPP_INCLUDE_DIRS})
+link_directories(${YAML_CPP_LIBRARY_DIRS})
 
-find_package(fmt REQUIRED)
+pkg_check_modules(FMT REQUIRED fmt)
+include_directories(${FMT_INCLUDE_DIRS})
+link_directories(${FMT_LIBRARY_DIRS})
 
 find_package(roaring REQUIRED)
 
@@ -171,11 +176,27 @@ target_link_libraries(inverted_index_poc
     Arrow::arrow_shared
     Parquet::parquet_shared
     ${AWSSDK_LINK_LIBRARIES}
-    yaml-cpp
-    fmt
+    ${YAML_CPP_LIBRARIES}
+    ${FMT_LIBRARIES}
     roaring::roaring
     lz4::lz4
     snappy::snappy
     zstd::libzstd_shared)
 
 add_executable(string_dedup_to_file string_dedup_to_file.cpp)
+
+# Add unit tests for encoders
+FILE(GLOB ENCODER_FILES 
+    src/varint_encoder.cpp 
+    src/for_encoder.cpp 
+    src/pfor_delta_encoder.cpp 
+    src/new_pfor_delta_encoder.cpp 
+    src/simple9_encoder.cpp 
+    src/adaptive_encoder.cpp
+    src/encoder_factory.cpp)
+
+add_executable(test_encoders test_encoders.cpp ${ENCODER_FILES})
+target_link_libraries(test_encoders
+    lz4::lz4
+    snappy::snappy
+    zstd::libzstd_shared)

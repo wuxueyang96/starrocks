@@ -65,14 +65,15 @@ std::vector<uint8_t> FrameOfReferenceEncoder::encode(const std::vector<uint32_t>
 }
 
 std::vector<uint32_t> FrameOfReferenceEncoder::decode(const uint8_t* encoded, size_t size) {
-    if (encoded == nullptr) {
+    if (encoded == nullptr || size == 0) {
         return {};
     }
 
-    size_t offset = 0;
+    const uint8_t* ptr = encoded;
+    const uint8_t* end_ptr = encoded + size;
 
     // Decode count
-    const uint32_t count = VarIntEncoder::decodeValue(&encoded);
+    const uint32_t count = VarIntEncoder::decodeValue(&ptr);
     if (count == 0) {
         return {};
     }
@@ -81,7 +82,7 @@ std::vector<uint32_t> FrameOfReferenceEncoder::decode(const uint8_t* encoded, si
     values.reserve(count);
 
     // Decode base value
-    const uint32_t base = VarIntEncoder::decodeValue(&encoded);
+    const uint32_t base = VarIntEncoder::decodeValue(&ptr);
     values.push_back(base);
 
     if (count == 1) {
@@ -89,10 +90,10 @@ std::vector<uint32_t> FrameOfReferenceEncoder::decode(const uint8_t* encoded, si
     }
 
     // Decode bits per value
-    if (offset >= encoded.size()) {
+    if (ptr >= end_ptr) {
         throw std::runtime_error("Invalid FOR encoding: missing bits_per_value");
     }
-    const uint8_t bits_per_value = encoded[offset++];
+    const uint8_t bits_per_value = *ptr++;
 
     if (bits_per_value == 0) {
         // All values are the same
@@ -106,8 +107,8 @@ std::vector<uint32_t> FrameOfReferenceEncoder::decode(const uint8_t* encoded, si
 
     for (size_t i = 1; i < count; ++i) {
         // Ensure we have enough bits in buffer
-        while (buffered_bits < bits_per_value && offset < encoded.size()) {
-            buffer |= (static_cast<uint64_t>(encoded[offset++]) << buffered_bits);
+        while (buffered_bits < bits_per_value && ptr < end_ptr) {
+            buffer |= (static_cast<uint64_t>(*ptr++) << buffered_bits);
             buffered_bits += 8;
         }
 

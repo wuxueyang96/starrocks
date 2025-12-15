@@ -29,12 +29,16 @@ public:
         {1, 28, 268435455} // Mode 8: 1 integer, 28 bits, max=268435455
     };
 
-    std::vector<uint8_t> encode(const std::vector<uint32_t>& values) override;
-    std::vector<uint32_t> decode(const std::vector<uint8_t>& encoded) override;
+    std::vector<uint8_t> encode(const std::vector<uint32_t>& values, size_t start, size_t end) override;
+    std::vector<uint32_t> decode(const uint8_t* encoded, size_t size) override;
     EncodingType getType() const override { return EncodingType::SIMPLE9; }
     const char* getName() const override { return "Simple9"; }
 
     // Helper method for batch encoding (used by other encoders)
     static size_t encodeBatch(const std::vector<uint32_t>& values, size_t start_idx,
                               std::vector<uint8_t>& output);
+
+private:
+    std::vector<uint8_t> encodeImpl(const std::vector<uint32_t>& values);
+    std::vector<uint32_t> decodeImpl(const std::vector<uint8_t>& encoded);
 };

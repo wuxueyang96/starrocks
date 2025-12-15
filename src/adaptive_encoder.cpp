@@ -109,13 +109,15 @@ EncodingType AdaptiveEncoder::selectBestEncoding(const std::vector<uint32_t>& va
     return EncodingType::FOR_VARINT;
 }
 
-std::vector<uint8_t> AdaptiveEncoder::encode(const std::vector<uint32_t>& values) {
-    selected_type_ = selectBestEncoding(values);
+std::vector<uint8_t> AdaptiveEncoder::encode(const std::vector<uint32_t>& values, size_t start, size_t end) {
+    // Extract the range to encode
+    std::vector<uint32_t> range_values(values.begin() + start, values.begin() + end);
+    selected_type_ = selectBestEncoding(range_values);
     selected_encoder_ = createEncoder(selected_type_);
-    return selected_encoder_->encode(values);
+    return selected_encoder_->encode(values, start, end);
 }
 
-std::vector<uint32_t> AdaptiveEncoder::decode(const std::vector<uint8_t>& encoded) {
+std::vector<uint32_t> AdaptiveEncoder::decode(const uint8_t* encoded, size_t size) {
     // Note: Adaptive decoder needs to know which encoding was used
     // In practice, this information should be stored with the encoded data
     // For now, we'll use the last selected encoder
@@ -123,5 +125,5 @@ std::vector<uint32_t> AdaptiveEncoder::decode(const std::vector<uint8_t>& encode
         // Default to VarInt if no encoder was selected
         selected_encoder_ = std::make_shared<VarIntEncoder>();
     }
-    return selected_encoder_->decode(encoded);
+    return selected_encoder_->decode(encoded, size);
 }

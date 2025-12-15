@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "compression_util.h"
-#include "encoding_util.h"
+#include "encoder.h"
 #include "posting_list.h"
 
 // InvertedIndex: maps terms to posting lists
@@ -32,10 +32,9 @@ public:
     // Save index to disk with optional compression
     // encoding_type can be VARINT, FOR_VARINT, PFOR_DELTA, or ADAPTIVE
     // In ADAPTIVE mode, each posting list chooses its own best encoding
-    // block_config enables block-level encoding within position lists
+    // All position lists are encoded in blocks with fixed block size of 128
     bool saveToDisk(const std::string& file_path, CompressionType compression = CompressionType::NONE,
-                    EncodingType encoding = EncodingType::ADAPTIVE,
-                    const BlockEncodingConfig* block_config = nullptr) const;
+                    EncodingType encoding = EncodingType::ADAPTIVE) const;
 
     // Load index from disk
     bool loadFromDisk(const std::string& file_path);

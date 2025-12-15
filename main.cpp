@@ -80,9 +80,7 @@ int build_inverted_index(const std::shared_ptr<arrow::Table>& table, const Confi
     std::cout << "Output path: " << config.index_output_path << std::endl;
     std::cout << "Compression: " << config.compression_type << std::endl;
     std::cout << "Encoding: " << config.encoding_type << std::endl;
-    if (config.enable_block_encoding) {
-        std::cout << "Block encoding: enabled (block size: " << config.block_size << ")" << std::endl;
-    }
+    std::cout << "Block encoding: enabled (block size: 128)" << std::endl;
     start_time = std::chrono::high_resolution_clock::now();
 
     // Parse compression and encoding types
@@ -101,16 +99,7 @@ int build_inverted_index(const std::shared_ptr<arrow::Table>& table, const Confi
         encoding = EncodingType::ADAPTIVE;
     }
 
-    // Prepare block encoding config
-    BlockEncodingConfig* block_config = nullptr;
-    BlockEncodingConfig block_config_instance;
-    if (config.enable_block_encoding) {
-        block_config_instance.enable_block_encoding = true;
-        block_config_instance.block_size = config.block_size;
-        block_config = &block_config_instance;
-    }
-
-    if (!index.saveToDisk(config.index_output_path, compression, encoding, block_config)) {
+    if (!index.saveToDisk(config.index_output_path, compression, encoding)) {
         std::cerr << "Error: Failed to save index to disk" << std::endl;
         return 1;
     }

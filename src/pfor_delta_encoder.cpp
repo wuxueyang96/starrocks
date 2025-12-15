@@ -5,7 +5,18 @@
 #include <stdexcept>
 #include <unordered_map>
 
-std::vector<uint8_t> PForDeltaEncoder::encode(const std::vector<uint32_t>& values) {
+std::vector<uint8_t> PForDeltaEncoder::encode(const std::vector<uint32_t>& values, size_t start, size_t end) {
+    // Extract the range and encode
+    std::vector<uint32_t> range_values(values.begin() + start, values.begin() + end);
+    return encodeImpl(range_values);
+}
+
+std::vector<uint32_t> PForDeltaEncoder::decode(const uint8_t* encoded, size_t size) {
+    std::vector<uint8_t> encoded_vec(encoded, encoded + size);
+    return decodeImpl(encoded_vec);
+}
+
+std::vector<uint8_t> PForDeltaEncoder::encodeImpl(const std::vector<uint32_t>& values) {
     std::vector<uint8_t> encoded;
 
     if (values.empty()) {
@@ -111,7 +122,7 @@ std::vector<uint8_t> PForDeltaEncoder::encode(const std::vector<uint32_t>& value
     return encoded;
 }
 
-std::vector<uint32_t> PForDeltaEncoder::decode(const std::vector<uint8_t>& encoded) {
+std::vector<uint32_t> PForDeltaEncoder::decodeImpl(const std::vector<uint8_t>& encoded) {
     std::vector<uint32_t> values;
 
     if (encoded.empty()) {
