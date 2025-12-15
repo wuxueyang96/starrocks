@@ -1,11 +1,10 @@
+#include <chrono>
 #include <iostream>
 #include <string>
-#include <chrono>
 #include <vector>
 
-#include "bitmap_inverted_index.h"
 #include "arrow/api.h"
-
+#include "bitmap_inverted_index.h"
 #include "include/config.h"
 #include "include/inverted_index.h"
 #include "include/s3_parquet_reader.h"
@@ -16,7 +15,7 @@ AwsSdkInitializer initializer;
 std::vector<std::string> tokenize(const std::string& text) {
     std::vector<std::string> tokens;
     std::string current_token;
-    
+
     for (const char c : text) {
         if (std::isalnum(c)) {
             current_token += std::tolower(c);
@@ -31,13 +30,12 @@ std::vector<std::string> tokenize(const std::string& text) {
     return tokens;
 }
 
-template <typename T>
 int build_inverted_index(const std::shared_ptr<arrow::Table>& table, const Config& config) {
     // ========== Step 2: Build inverted index ==========
     std::cout << "\n[Step 2] Building inverted index..." << std::endl;
     auto start_time = std::chrono::high_resolution_clock::now();
 
-    T index;
+    InvertedIndex index;
 
     // Process each column
     for (int col_idx = 0; col_idx < table->num_columns(); ++col_idx) {
@@ -89,13 +87,13 @@ int build_inverted_index(const std::shared_ptr<arrow::Table>& table, const Confi
 
     // Parse compression and encoding types
     CompressionType compression = CompressionUtil::stringToCompressionType(config.compression_type);
-    EncodingType encoding = EncodingType::ADAPTIVE;  // Default to adaptive
-    
+    EncodingType encoding = EncodingType::ADAPTIVE; // Default to adaptive
+
     if (config.encoding_type == "varint" || config.encoding_type == "VARINT") {
         encoding = EncodingType::VARINT;
     } else if (config.encoding_type == "for" || config.encoding_type == "FOR") {
         encoding = EncodingType::FOR_VARINT;
-    } else if (config.encoding_type == "pfor" || config.encoding_type == "PFOR" || 
+    } else if (config.encoding_type == "pfor" || config.encoding_type == "PFOR" ||
                config.encoding_type == "pfordelta" || config.encoding_type == "PFORDELTA") {
         encoding = EncodingType::PFOR_DELTA;
     } else if (config.encoding_type == "adaptive" || config.encoding_type == "ADAPTIVE" ||
@@ -124,8 +122,7 @@ int build_inverted_index(const std::shared_ptr<arrow::Table>& table, const Confi
 }
 
 // Specialization for BitmapInvertedIndex (doesn't support compression/encoding yet)
-template<>
-int build_inverted_index<BitmapInvertedIndex>(const std::shared_ptr<arrow::Table>& table, const Config& config) {
+int build_bitmap_inverted_index(const std::shared_ptr<arrow::Table>& table, const Config& config) {
     // ========== Step 2: Build inverted index ==========
     std::cout << "\n[Step 2] Building inverted index..." << std::endl;
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -202,7 +199,7 @@ int main(int argc, char* argv[]) {
     std::cout << "  Inverted Index Builder" << std::endl;
     std::cout << "========================================\n" << std::endl;
     std::cout << "Loading configuration from:" << config_path << std::endl;
-    
+
     Config config;
     try {
         config = Config::loadConfig(config_path);
@@ -230,9 +227,9 @@ int main(int argc, char* argv[]) {
 
         int ret = 0;
         if (config.type == "bitmap") {
-            ret = build_inverted_index<BitmapInvertedIndex>(table, config);
+            ret = build_bitmap_inverted_index(table, config);
         } else {
-            ret = build_inverted_index<InvertedIndex>(table, config);
+            ret = build_inverted_index(table, config);
         }
 
         if (ret != 0) {

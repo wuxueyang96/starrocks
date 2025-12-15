@@ -1,10 +1,10 @@
 #pragma once
 
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
-#include "position_list.h"
 #include "encoding_util.h"
+#include "position_list.h"
 
 // Posting: document ID + position list
 struct Posting {
@@ -33,13 +33,12 @@ public:
     // Encode the posting list using delta encoding and variable-length integers
     // In ADAPTIVE mode, each position list can use different encoding
     // With block_config, position lists can be chunked for even finer-grained encoding
-    std::vector<uint8_t> encode(EncodingType encoding_type, 
-                               const BlockEncodingConfig* block_config = nullptr) const;
+    std::vector<uint8_t> encode(EncodingType encoding_type, const BlockEncodingConfig* block_config = nullptr) const;
 
     // Decode from compressed bytes
     void decode(const std::vector<uint8_t>& encoded_data);
 
 private:
     std::vector<Posting> postings_;
-    std::unordered_map<uint32_t, size_t> doc_to_index_;  // Map doc_id to index in postings_
+    std::unordered_map<uint32_t, size_t> doc_to_index_; // Map doc_id to index in postings_
 };

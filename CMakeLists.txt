@@ -177,3 +177,5 @@ target_link_libraries(inverted_index_poc
     lz4::lz4
     Snappy::snappy
     zstd::libzstd_shared)
+
+add_executable(string_dedup_to_file string_dedup_to_file.cpp)

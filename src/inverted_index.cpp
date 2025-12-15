@@ -1,8 +1,8 @@
 #include "inverted_index.h"
 
-#include <iostream>
-#include <fstream>
 #include <algorithm>
+#include <fstream>
+#include <iostream>
 #include <stdexcept>
 
 // ==================== InvertedIndex Implementation ====================
@@ -26,7 +26,7 @@ const PostingList* InvertedIndex::getPostingList(const std::string& term) const 
 std::vector<std::string> InvertedIndex::getTerms() const {
     std::vector<std::string> terms;
     terms.reserve(index_.size());
-    for (const auto&[term, _] : index_) {
+    for (const auto& [term, _] : index_) {
         terms.push_back(term);
     }
     return terms;
@@ -38,16 +38,14 @@ size_t InvertedIndex::getTermCount() const {
 
 size_t InvertedIndex::getTotalPostings() const {
     size_t total = 0;
-    for (const auto&[_, posting] : index_) {
+    for (const auto& [_, posting] : index_) {
         total += posting.getDocFrequency();
     }
     return total;
 }
 
-bool InvertedIndex::saveToDisk(const std::string& file_path, 
-                              CompressionType compression,
-                              EncodingType encoding,
-                              const BlockEncodingConfig* block_config) const {
+bool InvertedIndex::saveToDisk(const std::string& file_path, CompressionType compression, EncodingType encoding,
+                               const BlockEncodingConfig* block_config) const {
     std::ofstream file(file_path, std::ios::binary);
     if (!file) {
         std::cerr << "Error: Cannot open file for writing: " << file_path << std::endl;
@@ -75,7 +73,7 @@ bool InvertedIndex::saveToDisk(const std::string& file_path,
     file.write(reinterpret_cast<const char*>(&num_terms), sizeof(num_terms));
 
     // Write each term and its posting list
-    for (const auto&[term, posting_list] : index_) {
+    for (const auto& [term, posting_list] : index_) {
         // Write term length and term
         const auto term_length = static_cast<uint32_t>(term.size());
         file.write(reinterpret_cast<const char*>(&term_length), sizeof(term_length));
@@ -103,20 +101,30 @@ bool InvertedIndex::saveToDisk(const std::string& file_path,
     }
 
     file.close();
-    
+
     std::string encoding_name;
     switch (encoding) {
-        case EncodingType::VARINT: encoding_name = "VarInt"; break;
-        case EncodingType::FOR_VARINT: encoding_name = "FOR+VarInt"; break;
-        case EncodingType::PFOR_DELTA: encoding_name = "PForDelta"; break;
-        case EncodingType::ADAPTIVE: encoding_name = "Adaptive (Mixed)"; break;
-        default: encoding_name = "Unknown"; break;
+    case EncodingType::VARINT:
+        encoding_name = "VarInt";
+        break;
+    case EncodingType::FOR_VARINT:
+        encoding_name = "FOR+VarInt";
+        break;
+    case EncodingType::PFOR_DELTA:
+        encoding_name = "PForDelta";
+        break;
+    case EncodingType::ADAPTIVE:
+        encoding_name = "Adaptive (Mixed)";
+        break;
+    default:
+        encoding_name = "Unknown";
+        break;
     }
-    
+
     if (block_config != nullptr && block_config->enable_block_encoding) {
         encoding_name += " + Block(" + std::to_string(block_config->block_size) + ")";
     }
-    
+
     std::cout << "Index saved with compression: " << CompressionUtil::compressionTypeToString(compression)
               << ", encoding: " << encoding_name << std::endl;
     return true;
@@ -195,16 +203,26 @@ bool InvertedIndex::loadFromDisk(const std::string& file_path) {
     }
 
     file.close();
-    
+
     std::string encoding_name;
     switch (encoding) {
-        case EncodingType::VARINT: encoding_name = "VarInt"; break;
-        case EncodingType::FOR_VARINT: encoding_name = "FOR+VarInt"; break;
-        case EncodingType::PFOR_DELTA: encoding_name = "PForDelta"; break;
-        case EncodingType::ADAPTIVE: encoding_name = "Adaptive (Mixed)"; break;
-        default: encoding_name = "Unknown"; break;
+    case EncodingType::VARINT:
+        encoding_name = "VarInt";
+        break;
+    case EncodingType::FOR_VARINT:
+        encoding_name = "FOR+VarInt";
+        break;
+    case EncodingType::PFOR_DELTA:
+        encoding_name = "PForDelta";
+        break;
+    case EncodingType::ADAPTIVE:
+        encoding_name = "Adaptive (Mixed)";
+        break;
+    default:
+        encoding_name = "Unknown";
+        break;
     }
-    
+
     std::cout << "Index loaded with compression: " << CompressionUtil::compressionTypeToString(compression)
               << ", encoding: " << encoding_name << std::endl;
     return true;
@@ -217,26 +235,25 @@ void InvertedIndex::printStatistics() const {
 
     // Calculate average positions per posting
     size_t total_positions = 0;
-    for (const auto&[_, posting_list] : index_) {
+    for (const auto& [_, posting_list] : index_) {
         for (const auto& posting : posting_list.getPostings()) {
             total_positions += posting.positions.size();
         }
     }
 
     if (getTotalPostings() > 0) {
-        std::cout << "Average positions per posting: "
-                  << static_cast<double>(total_positions) / getTotalPostings() << std::endl;
+        std::cout << "Average positions per posting: " << static_cast<double>(total_positions) / getTotalPostings()
+                  << std::endl;
     }
 
     // Show top 10 most frequent terms
     std::vector<std::pair<std::string, size_t>> term_freqs;
     term_freqs.reserve(index_.size());
 
-    for (const auto&[term, postings] : index_) {
+    for (const auto& [term, postings] : index_) {
         term_freqs.emplace_back(term, postings.getDocFrequency());
     }
-    std::sort(term_freqs.begin(), term_freqs.end(),
-              [](const auto& a, const auto& b) { return a.second > b.second; });
+    std::sort(term_freqs.begin(), term_freqs.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
 
     std::cout << "\nTop 10 most frequent terms:" << std::endl;
     for (size_t i = 0; i < std::min(static_cast<size_t>(10), term_freqs.size()); ++i) {

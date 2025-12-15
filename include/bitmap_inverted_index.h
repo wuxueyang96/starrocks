@@ -37,6 +37,7 @@ public:
 
     // Clear the index
     void clear();
+
 private:
     std::unordered_map<std::string, roaring::Roaring> _dict_to_docs;
     std::unordered_map<std::string, roaring::Roaring64Map> _index;

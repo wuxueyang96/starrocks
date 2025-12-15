@@ -1,13 +1,14 @@
 #pragma once
 
-#include <vector>
 #include <string>
+#include <vector>
+
 #include "encoding_util.h"
 
 // Configuration for block encoding
 struct BlockEncodingConfig {
-    size_t block_size = 128;  // Default block size for chunking
-    bool enable_block_encoding = true;  // Enable block-level encoding
+    size_t block_size = 128;           // Default block size for chunking
+    bool enable_block_encoding = true; // Enable block-level encoding
 };
 
 class PositionList {
@@ -38,15 +39,14 @@ public:
 
     // Get compressed size (after encoding)
     size_t getCompressedSize(EncodingType encoding_type, EncodingType& actual_encoding,
-                            const BlockEncodingConfig* block_config = nullptr) const;
+                             const BlockEncodingConfig* block_config = nullptr) const;
 
     // Get uncompressed size
     size_t getUncompressedSize() const;
 
 private:
     std::vector<uint32_t> positions_;
-    
+
     // Encode positions using block-based approach
-    std::vector<uint8_t> encodeWithBlocks(EncodingType encoding_type, 
-                                         const BlockEncodingConfig& config) const;
+    std::vector<uint8_t> encodeWithBlocks(EncodingType encoding_type, const BlockEncodingConfig& config) const;
 };

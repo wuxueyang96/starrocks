@@ -8,17 +8,14 @@
 #include "config.h"
 
 namespace Aws::S3 {
-    class S3Client;
+class S3Client;
 }
 
 class AwsSdkInitializer {
 public:
-    AwsSdkInitializer() {
-        Aws::InitAPI(options);
-    }
-    ~AwsSdkInitializer() {
-        Aws::ShutdownAPI(options);
-    }
+    AwsSdkInitializer() { Aws::InitAPI(options); }
+    ~AwsSdkInitializer() { Aws::ShutdownAPI(options); }
+
 private:
     Aws::SDKOptions options{};
 };

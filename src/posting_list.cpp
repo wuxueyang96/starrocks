@@ -1,9 +1,8 @@
 #include "posting_list.h"
 
 #include <algorithm>
-#include <utility>
 #include <stdexcept>
-
+#include <utility>
 
 // ==================== PostingList Implementation ====================
 
@@ -32,8 +31,7 @@ size_t PostingList::getDocFrequency() const {
     return postings_.size();
 }
 
-std::vector<uint8_t> PostingList::encode(EncodingType encoding_type,
-                                        const BlockEncodingConfig* block_config) const {
+std::vector<uint8_t> PostingList::encode(EncodingType encoding_type, const BlockEncodingConfig* block_config) const {
     std::vector<uint8_t> encoded;
 
     // Encode number of postings
@@ -54,10 +52,10 @@ std::vector<uint8_t> PostingList::encode(EncodingType encoding_type,
     // Encode first position list with block configuration
     EncodingType actual_encoding = encoding_type;
     auto pos_encoded = sorted_postings[0].positions.encode(encoding_type, actual_encoding, block_config);
-    
+
     // Store the actual encoding type used (important for ADAPTIVE mode)
     encoded.push_back(static_cast<uint8_t>(actual_encoding));
-    
+
     EncodingUtil::encodeVarInt(static_cast<uint32_t>(pos_encoded.size()), encoded);
     encoded.insert(encoded.end(), pos_encoded.begin(), pos_encoded.end());
 
@@ -69,10 +67,10 @@ std::vector<uint8_t> PostingList::encode(EncodingType encoding_type,
         // Encode position list with potentially different encoding per list
         actual_encoding = encoding_type;
         auto pos_data = sorted_postings[i].positions.encode(encoding_type, actual_encoding, block_config);
-        
+
         // Store the actual encoding type used
         encoded.push_back(static_cast<uint8_t>(actual_encoding));
-        
+
         EncodingUtil::encodeVarInt(static_cast<uint32_t>(pos_data.size()), encoded);
         encoded.insert(encoded.end(), pos_data.begin(), pos_data.end());
     }
@@ -108,8 +106,7 @@ void PostingList::decode(const std::vector<uint8_t>& encoded_data) {
 
     // Decode first position list
     uint32_t pos_size = EncodingUtil::decodeVarInt(encoded_data, offset);
-    std::vector<uint8_t> pos_data(encoded_data.begin() + offset,
-                                   encoded_data.begin() + offset + pos_size);
+    std::vector<uint8_t> pos_data(encoded_data.begin() + offset, encoded_data.begin() + offset + pos_size);
     offset += pos_size;
 
     postings_.emplace_back(current_doc_id);
@@ -128,8 +125,7 @@ void PostingList::decode(const std::vector<uint8_t>& encoded_data) {
         encoding_type = static_cast<EncodingType>(encoded_data[offset++]);
 
         pos_size = EncodingUtil::decodeVarInt(encoded_data, offset);
-        pos_data = std::vector<uint8_t>(encoded_data.begin() + offset,
-                                         encoded_data.begin() + offset + pos_size);
+        pos_data = std::vector<uint8_t>(encoded_data.begin() + offset, encoded_data.begin() + offset + pos_size);
         offset += pos_size;
 
         postings_.emplace_back(current_doc_id);
