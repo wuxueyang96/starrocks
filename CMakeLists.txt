@@ -175,7 +175,7 @@ target_link_libraries(inverted_index_poc
     fmt
     roaring::roaring
     lz4::lz4
-    Snappy::snappy
+    snappy::snappy
     zstd::libzstd_shared)
 
 add_executable(string_dedup_to_file string_dedup_to_file.cpp)
