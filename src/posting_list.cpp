@@ -50,13 +50,7 @@ std::vector<uint8_t> PostingList::encode(EncodingType encoding_type, const Block
     EncodingUtil::encodeVarInt(sorted_postings[0].doc_id, encoded);
 
     // Encode first position list with block configuration
-    EncodingType actual_encoding = encoding_type;
-    auto pos_encoded = sorted_postings[0].positions.encode(encoding_type, actual_encoding, block_config);
-
-    // Store the actual encoding type used (important for ADAPTIVE mode)
-    encoded.push_back(static_cast<uint8_t>(actual_encoding));
-
-    EncodingUtil::encodeVarInt(static_cast<uint32_t>(pos_encoded.size()), encoded);
+    auto pos_encoded = sorted_postings[0].positions.encode(encoding_type, block_config);
     encoded.insert(encoded.end(), pos_encoded.begin(), pos_encoded.end());
 
     // Encode subsequent doc_ids using delta encoding
