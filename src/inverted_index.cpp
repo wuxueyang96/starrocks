@@ -101,27 +101,8 @@ bool InvertedIndex::saveToDisk(const std::string& file_path, CompressionType com
 
     file.close();
 
-    std::string encoding_name;
-    switch (encoding) {
-    case EncodingType::VARINT:
-        encoding_name = "VarInt";
-        break;
-    case EncodingType::FOR_VARINT:
-        encoding_name = "FOR+VarInt";
-        break;
-    case EncodingType::PFOR_DELTA:
-        encoding_name = "PForDelta";
-        break;
-    case EncodingType::ADAPTIVE:
-        encoding_name = "Adaptive (Mixed)";
-        break;
-    default:
-        encoding_name = "Unknown";
-        break;
-    }
-
     std::cout << "Index saved with compression: " << CompressionUtil::compressionTypeToString(compression)
-              << ", encoding: " << encoding_name << std::endl;
+              << ", encoding: " << get_encoding_type_name(encoding) << std::endl;
     return true;
 }
 

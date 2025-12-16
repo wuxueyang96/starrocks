@@ -1,7 +1,7 @@
 #pragma once
 
-#include <vector>
 #include <cstdint>
+#include <vector>
 
 enum class EncodingType {
     ADAPTIVE = 0,      // Automatically choose best encoding
@@ -11,6 +11,25 @@ enum class EncodingType {
     SIMPLE9 = 4,       // Simple9 encoding
     NEW_PFOR_DELTA = 5 // NewPForDelta with Simple9 for exceptions
 };
+
+inline std::string get_encoding_type_name(EncodingType encoding) {
+    switch (encoding) {
+    case EncodingType::ADAPTIVE:
+        return "ADAPTIVE";
+    case EncodingType::VARINT:
+        return "VARINT";
+    case EncodingType::FOR_VARINT:
+        return "FOR_VARINT";
+    case EncodingType::PFOR_DELTA:
+        return "PFOR_DELTA";
+    case EncodingType::SIMPLE9:
+        return "SIMPLE9";
+    case EncodingType::NEW_PFOR_DELTA:
+        return "NEW_PFOR_DELTA";
+    default:
+        return "UNKNOWN";
+    }
+}
 
 /**
  * Abstract base class for all integer encoders
