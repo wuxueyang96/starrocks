@@ -78,7 +78,7 @@ bool InvertedIndex::saveToDisk(const std::string& file_path, CompressionType com
         file.write(reinterpret_cast<const char*>(&term_length), sizeof(term_length));
         file.write(term.c_str(), term_length);
 
-        // Encode posting list (block encoding is always enabled)
+        // Encode posting list
         std::vector<uint8_t> encoded = posting_list.encode(encoding);
         const auto uncompressed_size = static_cast<uint32_t>(encoded.size());
 
@@ -119,9 +119,6 @@ bool InvertedIndex::saveToDisk(const std::string& file_path, CompressionType com
         encoding_name = "Unknown";
         break;
     }
-
-    // Block encoding is always enabled with block size 128
-    encoding_name += " + Block(128)";
 
     std::cout << "Index saved with compression: " << CompressionUtil::compressionTypeToString(compression)
               << ", encoding: " << encoding_name << std::endl;

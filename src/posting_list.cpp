@@ -51,7 +51,7 @@ std::vector<uint8_t> PostingList::encode(EncodingType encoding_type) const {
     // Encode first doc_id
     VarIntEncoder::encodeValue(sorted_postings[0].doc_id, encoded);
 
-    // Encode first position list (block encoding is always enabled)
+    // Encode first position list
     auto pos_encoded = sorted_postings[0].positions.encode(encoding_type);
     VarIntEncoder::encodeValue(static_cast<uint32_t>(pos_encoded.size()), encoded);
     encoded.insert(encoded.end(), pos_encoded.begin(), pos_encoded.end());

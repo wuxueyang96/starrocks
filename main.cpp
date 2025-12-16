@@ -64,7 +64,6 @@ int build_inverted_index(const std::shared_ptr<arrow::Table>& table, const Confi
     std::cout << "Output path: " << config.index_output_path << std::endl;
     std::cout << "Compression: " << config.compression_type << std::endl;
     std::cout << "Encoding: " << config.encoding_type << std::endl;
-    std::cout << "Block encoding: enabled (block size: 128)" << std::endl;
     start_time = std::chrono::high_resolution_clock::now();
 
     // Parse compression and encoding types

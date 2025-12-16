@@ -31,7 +31,6 @@ public:
 
     // Encode the posting list using delta encoding and variable-length integers
     // In ADAPTIVE mode, each position list can use different encoding
-    // All position lists are chunked into blocks for encoding
     std::vector<uint8_t> encode(EncodingType encoding_type) const;
 
     // Decode from compressed bytes

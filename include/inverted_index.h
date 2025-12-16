@@ -32,7 +32,6 @@ public:
     // Save index to disk with optional compression
     // encoding_type can be VARINT, FOR_VARINT, PFOR_DELTA, or ADAPTIVE
     // In ADAPTIVE mode, each posting list chooses its own best encoding
-    // All position lists are encoded in blocks with fixed block size of 128
     bool saveToDisk(const std::string& file_path, CompressionType compression = CompressionType::NONE,
                     EncodingType encoding = EncodingType::ADAPTIVE) const;
 
