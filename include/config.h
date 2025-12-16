@@ -1,9 +1,8 @@
 #pragma once
 
 #include <string>
+#include <unordered_set>
 #include <vector>
-
-#include "compression_util.h"
 
 struct Config {
     std::string type;
@@ -17,6 +16,7 @@ struct Config {
     std::string index_output_path;       // Path to save inverted index
     std::string compression_type;        // Compression algorithm: none, lz4, snappy, zstd
     std::string encoding_type;           // Encoding type: varint, for, pfor, adaptive
+    std::unordered_set<std::string> stop_words;
 
     static Config loadConfig(const std::string& config_path);
 };

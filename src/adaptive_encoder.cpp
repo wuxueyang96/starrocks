@@ -1,27 +1,9 @@
 #include "adaptive_encoder.h"
-#include "varint_encoder.h"
-#include "for_encoder.h"
-#include "pfor_delta_encoder.h"
-#include "simple9_encoder.h"
-#include "new_pfor_delta_encoder.h"
+
 #include <algorithm>
 
-std::shared_ptr<Encoder> AdaptiveEncoder::createEncoder(EncodingType type) {
-    switch (type) {
-    case EncodingType::VARINT:
-        return std::make_shared<VarIntEncoder>();
-    case EncodingType::FOR_VARINT:
-        return std::make_shared<FrameOfReferenceEncoder>();
-    case EncodingType::PFOR_DELTA:
-        return std::make_shared<PForDeltaEncoder>();
-    case EncodingType::SIMPLE9:
-        return std::make_shared<Simple9Encoder>();
-    case EncodingType::NEW_PFOR_DELTA:
-        return std::make_shared<NewPForDeltaEncoder>();
-    default:
-        return std::make_shared<VarIntEncoder>();
-    }
-}
+#include "encoder_factory.h"
+#include "varint_encoder.h"
 
 EncodingType AdaptiveEncoder::selectBestEncoding(const std::vector<uint32_t>& values) {
     if (values.empty()) {
@@ -111,9 +93,9 @@ EncodingType AdaptiveEncoder::selectBestEncoding(const std::vector<uint32_t>& va
 
 std::vector<uint8_t> AdaptiveEncoder::encode(const std::vector<uint32_t>& values, size_t start, size_t end) {
     // Extract the range to encode
-    std::vector<uint32_t> range_values(values.begin() + start, values.begin() + end);
+    std::vector range_values(values.begin() + start, values.begin() + end);
     selected_type_ = selectBestEncoding(range_values);
-    selected_encoder_ = createEncoder(selected_type_);
+    selected_encoder_ = EncoderFactory::createEncoder(selected_type_);
     return selected_encoder_->encode(values, start, end);
 }
 

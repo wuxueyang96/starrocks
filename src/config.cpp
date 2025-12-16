@@ -33,6 +33,11 @@ Config Config::loadConfig(const std::string& config_path) {
             }
         }
 
+        if (yaml["tokenizer"] && yaml["tokenizer"]["stop_words"]) {
+            auto stop_words = yaml["tokenizer"]["stop_words"].as<std::vector<std::string>>();
+            config.stop_words.insert(stop_words.begin(), stop_words.end());
+        }
+
         config.index_output_path = "/tmp/inverted_index.bin";
         if (yaml["inverted_index"] && yaml["inverted_index"]["index_output_path"]) {
             config.index_output_path = yaml["inverted_index"]["index_output_path"].as<std::string>();

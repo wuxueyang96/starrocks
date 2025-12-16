@@ -8,27 +8,9 @@
 #include "include/config.h"
 #include "include/inverted_index.h"
 #include "include/s3_parquet_reader.h"
+#include "tokenizer.h"
 
 AwsSdkInitializer initializer;
-
-// Simple tokenizer: split text by whitespace and punctuation
-std::vector<std::string> tokenize(const std::string& text) {
-    std::vector<std::string> tokens;
-    std::string current_token;
-
-    for (const char c : text) {
-        if (std::isalnum(c)) {
-            current_token += std::tolower(c);
-        } else if (!current_token.empty()) {
-            tokens.push_back(current_token);
-            current_token.clear();
-        }
-    }
-    if (!current_token.empty()) {
-        tokens.push_back(current_token);
-    }
-    return tokens;
-}
 
 int build_inverted_index(const std::shared_ptr<arrow::Table>& table, const Config& config) {
     // ========== Step 2: Build inverted index ==========
@@ -36,6 +18,8 @@ int build_inverted_index(const std::shared_ptr<arrow::Table>& table, const Confi
     auto start_time = std::chrono::high_resolution_clock::now();
 
     InvertedIndex index;
+
+    Tokenizer tokenizer(config);
 
     // Process each column
     for (int col_idx = 0; col_idx < table->num_columns(); ++col_idx) {
@@ -58,7 +42,7 @@ int build_inverted_index(const std::shared_ptr<arrow::Table>& table, const Confi
                         auto doc_id = static_cast<uint32_t>(row);
 
                         // Tokenize and add to index
-                        auto tokens = tokenize(text);
+                        auto tokens = tokenizer.tokenize(text);
                         for (uint32_t pos = 0; pos < tokens.size(); ++pos) {
                             index.addTerm(tokens[pos], doc_id, pos);
                         }
@@ -118,6 +102,8 @@ int build_bitmap_inverted_index(const std::shared_ptr<arrow::Table>& table, cons
 
     BitmapInvertedIndex index;
 
+    Tokenizer tokenizer(config);
+
     // Process each column
     for (int col_idx = 0; col_idx < table->num_columns(); ++col_idx) {
         auto column = table->column(col_idx);
@@ -139,7 +125,7 @@ int build_bitmap_inverted_index(const std::shared_ptr<arrow::Table>& table, cons
                         auto doc_id = static_cast<uint32_t>(row);
 
                         // Tokenize and add to index
-                        auto tokens = tokenize(text);
+                        auto tokens = tokenizer.tokenize(text);
                         for (uint32_t pos = 0; pos < tokens.size(); ++pos) {
                             index.addTerm(tokens[pos], doc_id, pos);
                         }

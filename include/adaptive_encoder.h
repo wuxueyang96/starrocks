@@ -27,8 +27,5 @@ private:
     std::shared_ptr<Encoder> selected_encoder_;
 
     // Analyze data and choose best encoding type
-    EncodingType selectBestEncoding(const std::vector<uint32_t>& values);
-
-    // Create encoder instance based on type
-    std::shared_ptr<Encoder> createEncoder(EncodingType type);
+    static EncodingType selectBestEncoding(const std::vector<uint32_t>& values);
 };

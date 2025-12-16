@@ -7,12 +7,12 @@
 
 std::vector<uint8_t> PForDeltaEncoder::encode(const std::vector<uint32_t>& values, size_t start, size_t end) {
     // Extract the range and encode
-    std::vector<uint32_t> range_values(values.begin() + start, values.begin() + end);
+    std::vector range_values(values.begin() + start, values.begin() + end);
     return encodeImpl(range_values);
 }
 
 std::vector<uint32_t> PForDeltaEncoder::decode(const uint8_t* encoded, size_t size) {
-    std::vector<uint8_t> encoded_vec(encoded, encoded + size);
+    std::vector encoded_vec(encoded, encoded + size);
     return decodeImpl(encoded_vec);
 }
 

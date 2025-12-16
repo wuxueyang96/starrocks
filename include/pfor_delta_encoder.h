@@ -16,6 +16,6 @@ public:
     const char* getName() const override { return "PForDelta"; }
 
 private:
-    std::vector<uint8_t> encodeImpl(const std::vector<uint32_t>& values);
-    std::vector<uint32_t> decodeImpl(const std::vector<uint8_t>& encoded);
+    static std::vector<uint8_t> encodeImpl(const std::vector<uint32_t>& values);
+    static std::vector<uint32_t> decodeImpl(const std::vector<uint8_t>& encoded);
 };

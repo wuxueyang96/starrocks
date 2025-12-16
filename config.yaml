@@ -18,5 +18,6 @@ parquet:
   index_output_path: "/tmp/inverted_index.bin"  # Path to save inverted index
   compression: "none"      # Compression algorithm: none, lz4, snappy, zstd
   encoding: "adaptive"     # Encoding type: varint, for, pfor, adaptive (recommended)
-  enable_block_encoding: true  # Enable block-level encoding for position lists
-  block_size: 128          # Block size for chunking position lists (default: 128)
+
+tokenizer:
+  stop_words: []
