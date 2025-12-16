@@ -12,6 +12,25 @@
 
 AwsSdkInitializer initializer;
 
+EncodingType get_encoding_type_from_string(const std::string& encoding) {
+    if (encoding == "varint" || encoding == "VARINT") {
+        return EncodingType::VARINT;
+    }
+    if (encoding == "simple9" || encoding == "SIMPLE9") {
+        return EncodingType::SIMPLE9;
+    }
+    if (encoding == "for" || encoding == "FOR") {
+        return  EncodingType::FOR_VARINT;
+    }
+    if (encoding == "pfor" || encoding == "PFOR" || encoding == "pfordelta" || encoding == "PFORDELTA") {
+        return EncodingType::PFOR_DELTA;
+    }
+    if (encoding == "newpfor" || encoding == "NEWPFOR" || encoding == "newpfordelta" || encoding == "NEWPFORDELTA") {
+        return EncodingType::NEW_PFOR_DELTA;
+    }
+    return EncodingType::ADAPTIVE; // Default to adaptive
+}
+
 int build_inverted_index(const std::shared_ptr<arrow::Table>& table, const Config& config) {
     // ========== Step 2: Build inverted index ==========
     std::cout << "\n[Step 2] Building inverted index..." << std::endl;
@@ -68,21 +87,9 @@ int build_inverted_index(const std::shared_ptr<arrow::Table>& table, const Confi
 
     // Parse compression and encoding types
     CompressionType compression = CompressionUtil::stringToCompressionType(config.compression_type);
-    EncodingType encoding = EncodingType::ADAPTIVE; // Default to adaptive
 
-    if (config.encoding_type == "varint" || config.encoding_type == "VARINT") {
-        encoding = EncodingType::VARINT;
-    } else if (config.encoding_type == "for" || config.encoding_type == "FOR") {
-        encoding = EncodingType::FOR_VARINT;
-    } else if (config.encoding_type == "pfor" || config.encoding_type == "PFOR" ||
-               config.encoding_type == "pfordelta" || config.encoding_type == "PFORDELTA") {
-        encoding = EncodingType::PFOR_DELTA;
-    } else if (config.encoding_type == "adaptive" || config.encoding_type == "ADAPTIVE" ||
-               config.encoding_type == "auto" || config.encoding_type == "AUTO") {
-        encoding = EncodingType::ADAPTIVE;
-    }
-
-    if (!index.saveToDisk(config.index_output_path, compression, encoding)) {
+    if (const EncodingType encoding = get_encoding_type_from_string(config.encoding_type);
+        !index.saveToDisk(config.index_output_path, compression, encoding)) {
         std::cerr << "Error: Failed to save index to disk" << std::endl;
         return 1;
     }
