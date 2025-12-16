@@ -66,8 +66,6 @@ std::vector<uint8_t> VarIntEncoder::encode(const std::vector<uint32_t>& values, 
     }
 
     std::vector<uint8_t> encoded;
-    // Encode length first.
-    encodeValue(end - start, encoded);
     // Encode first position
     encodeValue(values[start], encoded);
     // Encode deltas
@@ -79,19 +77,17 @@ std::vector<uint8_t> VarIntEncoder::encode(const std::vector<uint32_t>& values, 
 }
 
 std::vector<uint32_t> VarIntEncoder::decode(const uint8_t* encoded, size_t size) {
-    if (encoded == nullptr) {
+    if (encoded == nullptr || size == 0) {
         return {};
     }
 
-    uint32_t length = decodeValue(&encoded);
-
     std::vector<uint32_t> positions;
-    positions.reserve(length);
+    const uint8_t* end = encoded + size;
 
     uint32_t current_position = decodeValue(&encoded);
     positions.push_back(current_position);
 
-    while (--length > 0) {
+    while (encoded < end) {
         const uint32_t delta = decodeValue(&encoded);
         current_position += delta;
         positions.push_back(current_position);
