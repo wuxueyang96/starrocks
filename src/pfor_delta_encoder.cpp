@@ -23,10 +23,7 @@ std::vector<uint8_t> PForDeltaEncoder::encode(const std::vector<uint32_t>& value
         const size_t block_end = std::min(pos + BLOCK_SIZE, end);
         const std::vector<uint8_t> block_data = encodeBlock(values, pos, block_end);
         
-        // Store block size
-        VarIntEncoder::encodeValue(static_cast<uint32_t>(block_data.size()), encoded);
-        
-        // Store block data
+        // Just append block data directly - no need to store size since we know BLOCK_SIZE
         encoded.insert(encoded.end(), block_data.begin(), block_data.end());
         
         pos = block_end;
@@ -51,14 +48,6 @@ std::vector<uint32_t> PForDeltaEncoder::decode(const uint8_t* encoded, size_t si
     
     // Decode blocks
     while (values.size() < total_count && offset < size) {
-        // Read block size
-        const uint32_t block_size = VarIntEncoder::decodeValue(encoded_vec, offset);
-        
-        if (offset + block_size > size) {
-            throw std::runtime_error("Invalid block size in PForDelta decode");
-        }
-        
-        // Decode block
         offset = decodeBlock(encoded_vec, offset, values);
     }
     
@@ -162,6 +151,8 @@ std::vector<uint8_t> PForDeltaEncoder::encodeBlock(const std::vector<uint32_t>& 
 }
 
 size_t PForDeltaEncoder::decodeBlock(const std::vector<uint8_t>& encoded, size_t offset, std::vector<uint32_t>& output) {
+    const size_t initial_offset = offset;
+    
     if (offset >= encoded.size()) {
         return offset;
     }
@@ -225,8 +216,8 @@ size_t PForDeltaEncoder::decodeBlock(const std::vector<uint8_t>& encoded, size_t
     }
     
     if (bits_per_value == 0) {
-        // All values are the same - calculate count from max exception index
-        uint32_t count = 1;
+        // All values are the same - determine count from exceptions or assume BLOCK_SIZE
+        uint32_t count = BLOCK_SIZE;
         if (!exception_indices.empty()) {
             count = *std::max_element(exception_indices.begin(), exception_indices.end()) + 1;
         }
@@ -238,22 +229,18 @@ size_t PForDeltaEncoder::decodeBlock(const std::vector<uint8_t>& encoded, size_t
         return offset;
     }
     
-    // Calculate count from remaining bitpacked data
-    const size_t start_offset = offset;
-    
-    // We need to determine block size - for fixed block, it's at most BLOCK_SIZE
-    // But for the last block, we need to calculate from bitpacked data
-    uint32_t max_idx = 0;
-    if (!exception_indices.empty()) {
-        max_idx = *std::max_element(exception_indices.begin(), exception_indices.end());
-    }
+    // For fixed-size blocks, decode exactly BLOCK_SIZE values (or until end of data)
+    // Calculate the maximum we can decode from available data
+    const size_t available_bytes = encoded.size() - offset;
+    const size_t available_bits = available_bytes * 8;
+    const size_t max_decodable = available_bits / bits_per_value;
+    const size_t count = std::min(static_cast<size_t>(BLOCK_SIZE), max_decodable);
     
     // Unpack regular values
     uint64_t buffer = 0;
     size_t buffered_bits = 0;
-    uint32_t value_idx = 0;
     
-    while (offset < encoded.size() && value_idx <= max_idx + BLOCK_SIZE) {
+    for (size_t i = 0; i < count && offset < encoded.size(); ++i) {
         // Ensure we have enough bits in buffer
         while (buffered_bits < bits_per_value && offset < encoded.size()) {
             buffer |= (static_cast<uint64_t>(encoded[offset++]) << buffered_bits);
@@ -269,21 +256,15 @@ size_t PForDeltaEncoder::decodeBlock(const std::vector<uint8_t>& encoded, size_t
         uint32_t delta = static_cast<uint32_t>(buffer & mask);
         
         // Replace with exception value if exists
-        const auto it = exceptions.find(value_idx);
+        const auto it = exceptions.find(static_cast<uint32_t>(i));
         if (it != exceptions.end()) {
             delta = it->second;
         }
         
         output.push_back(base + delta);
-        value_idx++;
         
         buffer >>= bits_per_value;
         buffered_bits -= bits_per_value;
-        
-        // Stop if we've processed enough values for this block
-        if (value_idx >= BLOCK_SIZE) {
-            break;
-        }
     }
     
     return offset;
