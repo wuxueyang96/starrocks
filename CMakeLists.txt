@@ -192,3 +192,16 @@ target_link_libraries(test_encoders
     lz4::lz4
     snappy::snappy
     zstd::libzstd_shared)
+
+add_executable(compare_encodings compare_encodings.cpp ${SRC_FILES})
+# Link libraries
+target_link_libraries(compare_encodings
+        Arrow::arrow_shared
+        Parquet::parquet_shared
+        ${AWSSDK_LINK_LIBRARIES}
+        yaml-cpp::yaml-cpp
+        fmt::fmt
+        roaring::roaring
+        lz4::lz4
+        snappy::snappy
+        zstd::libzstd_shared)

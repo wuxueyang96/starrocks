@@ -29,6 +29,8 @@ public:
     // Get total number of postings
     size_t getTotalPostings() const;
 
+    std::vector<uint8_t> encode(const EncodingType& encoding, const CompressionType& compression) const;
+
     // Save index to disk with optional compression
     // encoding_type can be VARINT, FOR_VARINT, PFOR_DELTA, or ADAPTIVE
     // In ADAPTIVE mode, each posting list chooses its own best encoding
@@ -46,4 +48,6 @@ public:
 
 private:
     std::unordered_map<std::string, PostingList> index_;
+
+    static void append_uint32(std::vector<uint8_t>& buffer, uint32_t value);
 };
