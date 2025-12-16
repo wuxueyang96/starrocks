@@ -31,20 +31,16 @@ std::vector<uint8_t> NewPForDeltaEncoder::encodeImpl(const std::vector<uint32_t>
         return encoded;
     }
 
-    // Sort values
-    std::vector<uint32_t> sorted_values = values;
-    std::sort(sorted_values.begin(), sorted_values.end());
-
-    // Use the minimum value as the base
-    const uint32_t base = sorted_values[0];
+    // Find min value as base
+    const uint32_t base = *std::min_element(values.begin(), values.end());
     VarIntEncoder::encodeValue(base, encoded);
 
-    // Calculate deltas from base
+    // Calculate deltas from base (preserve original order)
     std::vector<uint32_t> deltas;
-    deltas.reserve(sorted_values.size() - 1);
+    deltas.reserve(values.size());
 
-    for (size_t i = 1; i < sorted_values.size(); ++i) {
-        deltas.push_back(sorted_values[i] - base);
+    for (size_t i = 0; i < values.size(); ++i) {
+        deltas.push_back(values[i] - base);
     }
 
     if (deltas.empty()) {
@@ -57,7 +53,7 @@ std::vector<uint8_t> NewPForDeltaEncoder::encodeImpl(const std::vector<uint32_t>
     std::vector<uint32_t> sorted_deltas = deltas;
     std::sort(sorted_deltas.begin(), sorted_deltas.end());
 
-    const size_t percentile_90_idx = static_cast<size_t>(sorted_deltas.size() * 0.9);
+    const size_t percentile_90_idx = std::min(static_cast<size_t>(sorted_deltas.size() * 0.9), sorted_deltas.size() - 1);
     const uint32_t threshold = sorted_deltas[percentile_90_idx];
     const uint8_t bits_per_value = threshold == 0 ? 0 : (32 - __builtin_clz(threshold));
 
@@ -141,9 +137,9 @@ std::vector<uint32_t> NewPForDeltaEncoder::decodeImpl(const std::vector<uint8_t>
 
     // Decode base value
     const uint32_t base = VarIntEncoder::decodeValue(encoded, offset);
-    values.push_back(base);
 
     if (count == 1) {
+        values.push_back(base);
         return values;
     }
 
@@ -204,8 +200,8 @@ std::vector<uint32_t> NewPForDeltaEncoder::decodeImpl(const std::vector<uint8_t>
 
     if (bits_per_value == 0) {
         // All values are the same
-        for (uint32_t i = 1; i < count; ++i) {
-            const auto it = exceptions.find(i - 1);
+        for (uint32_t i = 0; i < count; ++i) {
+            const auto it = exceptions.find(i);
             const uint32_t delta = (it != exceptions.end()) ? it->second : 0;
             values.push_back(base + delta);
         }
@@ -214,12 +210,12 @@ std::vector<uint32_t> NewPForDeltaEncoder::decodeImpl(const std::vector<uint8_t>
 
     // Unpack regular values
     std::vector<uint32_t> deltas;
-    deltas.reserve(count - 1);
+    deltas.reserve(count);
 
     uint64_t buffer = 0;
     size_t buffered_bits = 0;
 
-    for (size_t i = 0; i < count - 1; ++i) {
+    for (size_t i = 0; i < count; ++i) {
         // Ensure we have enough bits in buffer
         while (buffered_bits < bits_per_value && offset < encoded.size()) {
             buffer |= (static_cast<uint64_t>(encoded[offset++]) << buffered_bits);
