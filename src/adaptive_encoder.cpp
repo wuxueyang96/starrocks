@@ -1,7 +1,8 @@
 #include "adaptive_encoder.h"
 
+#include <numeric>
+
 #include "encoder_factory.h"
-#include "varint_encoder.h"
 
 std::vector<uint8_t> AdaptiveEncoder::encode(const std::vector<uint32_t>& values, size_t start, size_t end) {
     if (values.empty() || start >= end) {
@@ -9,13 +10,8 @@ std::vector<uint8_t> AdaptiveEncoder::encode(const std::vector<uint32_t>& values
     }
 
     // Try all encoding types and measure actual compressed size
-    const std::vector candidates = {
-        EncodingType::VARINT,
-        EncodingType::SIMPLE9,
-        EncodingType::FOR_VARINT,
-        EncodingType::PFOR_DELTA,
-        EncodingType::NEW_PFOR_DELTA
-    };
+    const std::vector candidates = {EncodingType::VARINT, EncodingType::SIMPLE9, EncodingType::FOR_VARINT,
+                                    EncodingType::PFOR_DELTA, EncodingType::NEW_PFOR_DELTA};
 
     std::vector<uint8_t> result;
     size_t best_size = std::numeric_limits<size_t>::max();
