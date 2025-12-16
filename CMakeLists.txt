@@ -15,16 +15,6 @@ include_directories(${PARQUET_INCLUDE_DIR})
 # Add AWS SDK for C++
 find_package(AWSSDK REQUIRED COMPONENTS s3)
 
-# Add yaml-cpp for configuration
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(YAML_CPP REQUIRED yaml-cpp)
-include_directories(${YAML_CPP_INCLUDE_DIRS})
-link_directories(${YAML_CPP_LIBRARY_DIRS})
-
-pkg_check_modules(FMT REQUIRED fmt)
-include_directories(${FMT_INCLUDE_DIRS})
-link_directories(${FMT_LIBRARY_DIRS})
-
 find_package(roaring REQUIRED)
 
 # Add compression libraries
@@ -165,6 +155,8 @@ endfunction()
 find_or_pkg_config(lz4 lz4 liblz4)
 find_or_pkg_config(snappy snappy libsnappy)
 find_or_pkg_config(zstd zstd libzstd)
+find_or_pkg_config(yaml-cpp yaml-cpp yaml-cpp)
+find_or_pkg_config(fmt fmt fmt)
 
 include_directories(include)
 FILE(GLOB SRC_FILES src/*.cpp)
@@ -176,8 +168,8 @@ target_link_libraries(inverted_index_poc
     Arrow::arrow_shared
     Parquet::parquet_shared
     ${AWSSDK_LINK_LIBRARIES}
-    ${YAML_CPP_LIBRARIES}
-    ${FMT_LIBRARIES}
+    yaml-cpp::yaml-cpp
+    fmt::fmt
     roaring::roaring
     lz4::lz4
     snappy::snappy

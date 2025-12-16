@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <cstdint>
 
 enum class EncodingType {
     ADAPTIVE = 0,      // Automatically choose best encoding

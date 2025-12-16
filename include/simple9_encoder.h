@@ -8,7 +8,7 @@
  * Format: 4-bit selector + 28 bits of data
  * 9 different packing modes for optimal space usage
  */
-class Simple9Encoder : public Encoder {
+class Simple9Encoder final : public Encoder {
 public:
     struct Simple9Mode {
         uint8_t count;      // Number of integers in this mode
