@@ -1,8 +1,12 @@
 #include "for_encoder.h"
-#include "varint_encoder.h"
-#include <algorithm>
 
-std::vector<uint8_t> FrameOfReferenceEncoder::encode(const std::vector<uint32_t>& values, const size_t start, const size_t end) {
+#include <algorithm>
+#include <stdexcept>
+
+#include "varint_encoder.h"
+
+std::vector<uint8_t> FrameOfReferenceEncoder::encode(const std::vector<uint32_t>& values, const size_t start,
+                                                     const size_t end) {
     if (values.empty() || start >= end || start > values.size() || end > values.size()) {
         return {};
     }
