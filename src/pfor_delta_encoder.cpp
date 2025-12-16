@@ -23,9 +23,6 @@ std::vector<uint8_t> PForDeltaEncoder::encodeImpl(const std::vector<uint32_t>& v
         return encoded;
     }
 
-    // Encode the count
-    VarIntEncoder::encodeValue(static_cast<uint32_t>(values.size()), encoded);
-
     if (values.size() == 1) {
         VarIntEncoder::encodeValue(values[0], encoded);
         return encoded;
@@ -127,26 +124,16 @@ std::vector<uint32_t> PForDeltaEncoder::decodeImpl(const std::vector<uint8_t>& e
 
     size_t offset = 0;
 
-    // Decode count
-    const uint32_t count = VarIntEncoder::decodeValue(encoded, offset);
-    if (count == 0) {
-        return values;
-    }
-
-    values.reserve(count);
-
     // Decode base value
     const uint32_t base = VarIntEncoder::decodeValue(encoded, offset);
 
-    if (count == 1) {
+    // Check if single value case
+    if (offset >= encoded.size()) {
         values.push_back(base);
         return values;
     }
 
     // Decode bits per value
-    if (offset >= encoded.size()) {
-        throw std::runtime_error("Invalid PForDelta encoding: missing bits_per_value");
-    }
     const uint8_t bits_per_value = encoded[offset++];
 
     // Decode number of exceptions
@@ -162,6 +149,9 @@ std::vector<uint32_t> PForDeltaEncoder::decodeImpl(const std::vector<uint8_t>& e
     // Decode exception values using Simple9
     std::vector<uint32_t> exception_values;
     exception_values.reserve(num_exceptions);
+    
+    // Calculate where bitpacked data starts by decoding Simple9 exception values
+    const size_t exception_start_offset = offset;
     while (exception_values.size() < num_exceptions && offset < encoded.size()) {
         if (offset + 4 <= encoded.size()) {
             // Read 32-bit word (little-endian)
@@ -199,7 +189,11 @@ std::vector<uint32_t> PForDeltaEncoder::decodeImpl(const std::vector<uint8_t>& e
     }
 
     if (bits_per_value == 0) {
-        // All values are the same
+        // All values are the same - calculate count from max exception index
+        uint32_t count = 1;
+        if (!exception_indices.empty()) {
+            count = *std::max_element(exception_indices.begin(), exception_indices.end()) + 1;
+        }
         for (uint32_t i = 0; i < count; ++i) {
             const auto it = exceptions.find(i);
             const uint32_t delta = (it != exceptions.end()) ? it->second : 0;
@@ -207,6 +201,13 @@ std::vector<uint32_t> PForDeltaEncoder::decodeImpl(const std::vector<uint8_t>& e
         }
         return values;
     }
+
+    // Calculate count from remaining bitpacked data
+    const size_t remaining_bytes = encoded.size() - offset;
+    const size_t total_bits = remaining_bytes * 8;
+    const size_t count = total_bits / bits_per_value;
+
+    values.reserve(count);
 
     // Unpack regular values
     std::vector<uint32_t> deltas;
@@ -220,6 +221,10 @@ std::vector<uint32_t> PForDeltaEncoder::decodeImpl(const std::vector<uint8_t>& e
         while (buffered_bits < bits_per_value && offset < encoded.size()) {
             buffer |= (static_cast<uint64_t>(encoded[offset++]) << buffered_bits);
             buffered_bits += 8;
+        }
+
+        if (buffered_bits < bits_per_value) {
+            break;
         }
 
         // Extract delta

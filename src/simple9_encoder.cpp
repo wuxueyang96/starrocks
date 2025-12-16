@@ -77,9 +77,6 @@ std::vector<uint8_t> Simple9Encoder::encodeImpl(const std::vector<uint32_t>& val
         return encoded;
     }
 
-    // Encode count
-    VarIntEncoder::encodeValue(static_cast<uint32_t>(values.size()), encoded);
-
     // Encode values in batches
     size_t idx = 0;
     while (idx < values.size()) {
@@ -99,16 +96,8 @@ std::vector<uint32_t> Simple9Encoder::decodeImpl(const std::vector<uint8_t>& enc
 
     size_t offset = 0;
 
-    // Decode count
-    const uint32_t count = VarIntEncoder::decodeValue(encoded, offset);
-    if (count == 0) {
-        return values;
-    }
-
-    values.reserve(count);
-
-    // Decode values
-    while (values.size() < count && offset < encoded.size()) {
+    // Decode values until we reach the end
+    while (offset < encoded.size()) {
         // Check if we have enough bytes for a 32-bit word
         if (offset + 4 <= encoded.size()) {
             // Read 32-bit word (little-endian)
@@ -129,7 +118,7 @@ std::vector<uint32_t> Simple9Encoder::decodeImpl(const std::vector<uint8_t>& enc
             const uint32_t mask = (1U << mode.bits) - 1;
 
             // Extract integers
-            for (uint8_t i = 0; i < mode.count && values.size() < count; ++i) {
+            for (uint8_t i = 0; i < mode.count; ++i) {
                 const uint32_t value = (word >> (i * mode.bits)) & mask;
                 values.push_back(value);
             }
