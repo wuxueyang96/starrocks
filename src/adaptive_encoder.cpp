@@ -1,5 +1,6 @@
 #include "adaptive_encoder.h"
 
+#include <limits>
 #include <numeric>
 
 #include "encoder_factory.h"
