@@ -36,12 +36,5 @@ std::vector<uint8_t> AdaptiveEncoder::encode(const std::vector<uint32_t>& values
 }
 
 std::vector<uint32_t> AdaptiveEncoder::decode(const uint8_t* encoded, size_t size) {
-    // Note: Adaptive decoder needs to know which encoding was used
-    // In practice, this information should be stored with the encoded data
-    // For now, we'll use the last selected encoder
-    if (!selected_encoder_) {
-        // Default to VarInt if no encoder was selected
-        selected_encoder_ = std::make_shared<VarIntEncoder>();
-    }
-    return selected_encoder_->decode(encoded, size);
+    return {};
 }
