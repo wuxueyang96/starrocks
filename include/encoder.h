@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <roaring/roaring.hh>
 
 enum class EncodingType {
     ADAPTIVE = 0,      // Automatically choose best encoding
@@ -41,20 +42,18 @@ public:
     virtual ~Encoder() = default;
 
     /**
-     * Encode a list of unsigned 32-bit integers in range [start, end)
-     * @param values The values to encode
-     * @param start The start index of the values to encode
-     * @param end The end index of the values to encode
+     * Encode a Roaring bitmap
+     * @param roaring The Roaring bitmap to encode
      * @return Encoded byte array
      */
-    virtual std::vector<uint8_t> encode(const std::vector<uint32_t>& values, size_t start, size_t end) = 0;
+    virtual std::vector<uint8_t> encode(const roaring::Roaring& roaring) = 0;
 
     /**
-     * Decode a byte array back to unsigned 32-bit integers
-     * @param encoded The encoded byte array
-     * @return Decoded values
+     * Decode a byte array back to a Roaring bitmap
+     * @param data The encoded byte array
+     * @return Decoded Roaring bitmap
      */
-    virtual std::vector<uint32_t> decode(const uint8_t* encoded, size_t size) = 0;
+    virtual roaring::Roaring decode(const std::vector<uint8_t>& data) = 0;
 
     /**
      * Get the encoding type of this encoder

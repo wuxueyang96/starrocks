@@ -3,6 +3,7 @@
 #include <vector>
 #include <random>
 #include <algorithm>
+#include <roaring/roaring.hh>
 
 #include "include/varint_encoder.h"
 #include "include/for_encoder.h"
@@ -29,8 +30,12 @@ void assert_equal(const std::vector<uint32_t>& expected, const std::vector<uint3
 }
 
 void test_encoder(const std::string& encoder_name, const std::shared_ptr<Encoder>& encoder, const std::vector<uint32_t>& values) {
-    std::vector<uint8_t> encoded = encoder->encode(values, 0, values.size());
-    std::vector<uint32_t> decoded = encoder->decode(encoded.data(), encoded.size());
+    roaring::Roaring roaring(values.size(), values.data());
+    std::vector<uint8_t> encoded = encoder->encode(roaring);
+    roaring::Roaring decoded_roaring = encoder->decode(encoded);
+    
+    std::vector<uint32_t> decoded(decoded_roaring.cardinality());
+    decoded_roaring.toUint32Array(decoded.data());
     
     std::cout << encoder_name << " - Input size: " << values.size() 
               << ", Encoded size: " << encoded.size() 
@@ -91,21 +96,26 @@ void test_for_small_range() {
 
 void test_for_same_values() {
     auto encoder = std::make_shared<FrameOfReferenceEncoder>();
-    std::vector<uint32_t> values(20, 42);
-    test_encoder("FOR (same values)", encoder, values);
+    // Roaring is a set, so use consecutive values with same delta
+    std::vector<uint32_t> values;
+    for (uint32_t i = 0; i < 20; ++i) {
+        values.push_back(42 + i);  // consecutive values starting from 42
+    }
+    test_encoder("FOR (consecutive values)", encoder, values);
 }
 
 // ========== PForDelta Encoder Tests ==========
 void test_pfor_with_outliers() {
     auto encoder = std::make_shared<PForDeltaEncoder>();
+    // Create sorted unique values with some outliers mixed in
     std::vector<uint32_t> values;
-    for (uint32_t i = 0; i < 100; ++i) {
+    for (uint32_t i = 0; i < 97; ++i) {
         values.push_back(i);
     }
-    // Add some outliers
-    values[10] = 10000;
-    values[50] = 20000;
-    values[90] = 30000;
+    // Add outliers (must be larger than previous values to maintain sorted order)
+    values.push_back(10000);
+    values.push_back(20000);
+    values.push_back(30000);
     
     test_encoder("PForDelta (with outliers)", encoder, values);
 }
@@ -122,27 +132,31 @@ void test_pfor_clustered() {
 // ========== NewPForDelta Encoder Tests ==========
 void test_newpfor_sparse_outliers() {
     auto encoder = std::make_shared<NewPForDeltaEncoder>();
+    // Create sorted unique values with outliers at the end
     std::vector<uint32_t> values;
-    for (uint32_t i = 0; i < 100; ++i) {
+    for (uint32_t i = 0; i < 97; ++i) {
         values.push_back(i * 5);
     }
-    // Add sparse outliers
-    values[5] = 5000;
-    values[25] = 8000;
-    values[75] = 12000;
+    // Add outliers (must maintain sorted order)
+    values.push_back(5000);
+    values.push_back(8000);
+    values.push_back(12000);
     
     test_encoder("NewPForDelta (sparse outliers)", encoder, values);
 }
 
 void test_newpfor_many_outliers() {
     auto encoder = std::make_shared<NewPForDeltaEncoder>();
+    // Create sorted unique values with varying gaps
     std::vector<uint32_t> values;
+    uint32_t current = 0;
     for (uint32_t i = 0; i < 100; ++i) {
         if (i % 10 == 0) {
-            values.push_back(i * 100); // outlier
+            current += 100; // larger gap (outlier)
         } else {
-            values.push_back(i);
+            current += 1;   // small gap
         }
+        values.push_back(current);
     }
     test_encoder("NewPForDelta (many outliers)", encoder, values);
 }
@@ -163,8 +177,9 @@ void test_simple9_variable_sizes() {
 void test_simple9_large_batch() {
     auto encoder = std::make_shared<Simple9Encoder>();
     std::vector<uint32_t> values;
+    // Roaring is a set, use unique values
     for (uint32_t i = 0; i < 100; ++i) {
-        values.push_back(i % 128);
+        values.push_back(i);
     }
     test_encoder("Simple9 (large batch)", encoder, values);
 }
@@ -187,24 +202,29 @@ void test_adaptive_selects_for() {
 
 void test_adaptive_selects_pfor() {
     auto encoder = std::make_shared<AdaptiveEncoder>();
+    // Create sorted unique values with outliers at the end
     std::vector<uint32_t> values;
-    for (uint32_t i = 0; i < 100; ++i) {
+    for (uint32_t i = 0; i < 98; ++i) {
         values.push_back(i);
     }
-    values[20] = 50000;
-    values[60] = 80000;
+    values.push_back(50000);
+    values.push_back(80000);
     test_encoder("Adaptive (selects PFor)", encoder, values);
 }
 
 // ========== Edge Cases ==========
 void test_all_zeros() {
-    std::vector<uint32_t> values(50, 0);
+    // Roaring is a set, cannot have duplicates. Test with consecutive small values instead.
+    std::vector<uint32_t> values;
+    for (uint32_t i = 0; i < 50; ++i) {
+        values.push_back(i);
+    }
     
     auto varint = std::make_shared<VarIntEncoder>();
-    test_encoder("VarInt (all zeros)", varint, values);
+    test_encoder("VarInt (small consecutive)", varint, values);
     
     auto for_enc = std::make_shared<FrameOfReferenceEncoder>();
-    test_encoder("FOR (all zeros)", for_enc, values);
+    test_encoder("FOR (small consecutive)", for_enc, values);
 }
 
 void test_single_large_value() {
@@ -215,44 +235,44 @@ void test_single_large_value() {
 }
 
 void test_alternating_values() {
+    // Roaring is a set, use unique values with large gaps
     std::vector<uint32_t> values;
     for (int i = 0; i < 50; ++i) {
-        values.push_back(i % 2 == 0 ? 10 : 10000);
+        values.push_back(i * 1000);  // values: 0, 1000, 2000, ...
     }
     
     auto pfor = std::make_shared<PForDeltaEncoder>();
-    test_encoder("PForDelta (alternating)", pfor, values);
+    test_encoder("PForDelta (large gaps)", pfor, values);
     
     auto newpfor = std::make_shared<NewPForDeltaEncoder>();
-    test_encoder("NewPForDelta (alternating)", newpfor, values);
+    test_encoder("NewPForDelta (large gaps)", newpfor, values);
 }
 
 // ========== Random Data Tests ==========
 void test_random_data() {
-    std::random_device rd;
     std::mt19937 gen(42); // Fixed seed for reproducibility
     
-    // Small random values
+    // Small random values - use unique sequential values with random gaps
     {
-        std::uniform_int_distribution<uint32_t> dist(0, 255);
         std::vector<uint32_t> values;
+        uint32_t current = 0;
         for (int i = 0; i < 100; ++i) {
-            values.push_back(dist(gen));
+            current += (gen() % 10) + 1;  // Random gap 1-10
+            values.push_back(current);
         }
-        std::sort(values.begin(), values.end());
         
         auto adaptive = std::make_shared<AdaptiveEncoder>();
         test_encoder("Adaptive (random small)", adaptive, values);
     }
     
-    // Large random values
+    // Large random values - use unique sequential values with larger random gaps
     {
-        std::uniform_int_distribution<uint32_t> dist(0, 1000000);
         std::vector<uint32_t> values;
+        uint32_t current = 0;
         for (int i = 0; i < 100; ++i) {
-            values.push_back(dist(gen));
+            current += (gen() % 10000) + 1;  // Random gap 1-10000
+            values.push_back(current);
         }
-        std::sort(values.begin(), values.end());
         
         auto adaptive = std::make_shared<AdaptiveEncoder>();
         test_encoder("Adaptive (random large)", adaptive, values);

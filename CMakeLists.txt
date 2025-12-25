@@ -1,8 +1,31 @@
 cmake_minimum_required(VERSION 3.16)
 project(inverted_index_poc)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Fix for Homebrew LLVM libc++ linking issue on macOS
+# This handles ABI compatibility when using Homebrew LLVM
+if(APPLE)
+    # Check if using Homebrew LLVM
+    execute_process(
+        COMMAND ${CMAKE_CXX_COMPILER} --version
+        OUTPUT_VARIABLE COMPILER_VERSION_OUTPUT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(COMPILER_VERSION_OUTPUT MATCHES "Homebrew")
+        message(STATUS "Detected Homebrew LLVM compiler")
+        # Get LLVM installation path
+        get_filename_component(LLVM_BIN_DIR ${CMAKE_CXX_COMPILER} DIRECTORY)
+        get_filename_component(LLVM_ROOT ${LLVM_BIN_DIR} DIRECTORY)
+        set(LLVM_LIBCXX_DIR "${LLVM_ROOT}/lib/c++")
+        if(EXISTS ${LLVM_LIBCXX_DIR})
+            message(STATUS "Found Homebrew LLVM libc++ at: ${LLVM_LIBCXX_DIR}")
+            add_compile_options(-nostdinc++ -isystem ${LLVM_ROOT}/include/c++/v1)
+            add_link_options(-L${LLVM_LIBCXX_DIR} -Wl,-rpath,${LLVM_LIBCXX_DIR} -lc++abi)
+        endif()
+    endif()
+endif()
 
 # Find required packages
 find_package(Arrow REQUIRED)
@@ -189,6 +212,7 @@ FILE(GLOB ENCODER_FILES
 
 add_executable(test_encoders test_encoders.cpp ${ENCODER_FILES})
 target_link_libraries(test_encoders
+    roaring::roaring
     lz4::lz4
     snappy::snappy
     zstd::libzstd_shared)
@@ -205,3 +229,9 @@ target_link_libraries(compare_encodings
         lz4::lz4
         snappy::snappy
         zstd::libzstd_shared)
+
+add_executable(roaring_test roaring_test.cpp)
+target_link_libraries(roaring_test roaring::roaring)
+
+add_executable(varint_encoder_test varint_encoder_test.cpp ${ENCODER_FILES})
+target_link_libraries(varint_encoder_test roaring::roaring)

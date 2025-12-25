@@ -5,12 +5,17 @@
 #include <stdexcept>
 #include <unordered_map>
 
-std::vector<uint8_t> PForDeltaEncoder::encode(const std::vector<uint32_t>& values, size_t start, size_t end) {
+std::vector<uint8_t> PForDeltaEncoder::encode(const roaring::Roaring& roaring) {
     std::vector<uint8_t> encoded;
     
-    if (start >= end) {
+    if (roaring.isEmpty()) {
         return encoded;
     }
+    
+    std::vector<uint32_t> values(roaring.cardinality());
+    roaring.toUint32Array(values.data());
+    const size_t start = 0;
+    const size_t end = values.size();
     
     const size_t total_count = end - start;
     
@@ -32,26 +37,25 @@ std::vector<uint8_t> PForDeltaEncoder::encode(const std::vector<uint32_t>& value
     return encoded;
 }
 
-std::vector<uint32_t> PForDeltaEncoder::decode(const uint8_t* encoded, size_t size) {
+roaring::Roaring PForDeltaEncoder::decode(const std::vector<uint8_t>& data) {
     std::vector<uint32_t> values;
     
-    if (size == 0) {
-        return values;
+    if (data.empty()) {
+        return roaring::Roaring();
     }
     
     size_t offset = 0;
-    const std::vector<uint8_t> encoded_vec(encoded, encoded + size);
     
     // Decode total count
-    const uint32_t total_count = VarIntEncoder::decodeValue(encoded_vec, offset);
+    const uint32_t total_count = VarIntEncoder::decodeValue(data, offset);
     values.reserve(total_count);
     
     // Decode blocks
-    while (values.size() < total_count && offset < size) {
-        offset = decodeBlock(encoded_vec, offset, values);
+    while (values.size() < total_count && offset < data.size()) {
+        offset = decodeBlock(data, offset, values);
     }
     
-    return values;
+    return roaring::Roaring(values.size(), values.data());
 }
 
 std::vector<uint8_t> PForDeltaEncoder::encodeBlock(const std::vector<uint32_t>& values, size_t start, size_t end) {

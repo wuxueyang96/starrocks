@@ -29,8 +29,8 @@ public:
         {1, 28, 268435455} // Mode 8: 1 integer, 28 bits, max=268435455
     };
 
-    std::vector<uint8_t> encode(const std::vector<uint32_t>& values, size_t start, size_t end) override;
-    std::vector<uint32_t> decode(const uint8_t* encoded, size_t size) override;
+    std::vector<uint8_t> encode(const roaring::Roaring& roaring) override;
+    roaring::Roaring decode(const std::vector<uint8_t>& data) override;
     EncodingType getType() const override { return EncodingType::SIMPLE9; }
     const char* getName() const override { return "Simple9"; }
 

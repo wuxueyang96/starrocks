@@ -5,11 +5,15 @@
 
 #include "varint_encoder.h"
 
-std::vector<uint8_t> FrameOfReferenceEncoder::encode(const std::vector<uint32_t>& values, const size_t start,
-                                                     const size_t end) {
-    if (values.empty() || start >= end || start > values.size() || end > values.size()) {
+std::vector<uint8_t> FrameOfReferenceEncoder::encode(const roaring::Roaring& roaring) {
+    if (roaring.isEmpty()) {
         return {};
     }
+
+    std::vector<uint32_t> values(roaring.cardinality());
+    roaring.toUint32Array(values.data());
+    const size_t start = 0;
+    const size_t end = values.size();
 
     std::vector<uint8_t> encoded;
 
@@ -68,41 +72,40 @@ std::vector<uint8_t> FrameOfReferenceEncoder::encode(const std::vector<uint32_t>
     return encoded;
 }
 
-std::vector<uint32_t> FrameOfReferenceEncoder::decode(const uint8_t* encoded, size_t size) {
-    if (encoded == nullptr || size == 0) {
-        return {};
+roaring::Roaring FrameOfReferenceEncoder::decode(const std::vector<uint8_t>& data) {
+    if (data.empty()) {
+        return roaring::Roaring();
     }
 
-    const uint8_t* ptr = encoded;
-    const uint8_t* end_ptr = encoded + size;
+    size_t offset = 0;
 
     // Decode count
-    const uint32_t count = VarIntEncoder::decodeValue(&ptr);
+    const uint32_t count = VarIntEncoder::decodeValue(data, offset);
     if (count == 0) {
-        return {};
+        return roaring::Roaring();
     }
 
     std::vector<uint32_t> values;
     values.reserve(count);
 
     // Decode base value
-    const uint32_t base = VarIntEncoder::decodeValue(&ptr);
+    const uint32_t base = VarIntEncoder::decodeValue(data, offset);
     values.push_back(base);
 
     if (count == 1) {
-        return values;
+        return roaring::Roaring(values.size(), values.data());
     }
 
     // Decode bits per value
-    if (ptr >= end_ptr) {
+    if (offset >= data.size()) {
         throw std::runtime_error("Invalid FOR encoding: missing bits_per_value");
     }
-    const uint8_t bits_per_value = *ptr++;
+    const uint8_t bits_per_value = data[offset++];
 
     if (bits_per_value == 0) {
         // All values are the same
         values.resize(count, base);
-        return values;
+        return roaring::Roaring(values.size(), values.data());
     }
 
     // Unpack deltas
@@ -111,8 +114,8 @@ std::vector<uint32_t> FrameOfReferenceEncoder::decode(const uint8_t* encoded, si
 
     for (size_t i = 1; i < count; ++i) {
         // Ensure we have enough bits in buffer
-        while (buffered_bits < bits_per_value && ptr < end_ptr) {
-            buffer |= (static_cast<uint64_t>(*ptr++) << buffered_bits);
+        while (buffered_bits < bits_per_value && offset < data.size()) {
+            buffer |= (static_cast<uint64_t>(data[offset++]) << buffered_bits);
             buffered_bits += 8;
         }
 
@@ -125,5 +128,5 @@ std::vector<uint32_t> FrameOfReferenceEncoder::decode(const uint8_t* encoded, si
         buffered_bits -= bits_per_value;
     }
 
-    return values;
+    return roaring::Roaring(values.size(), values.data());
 }

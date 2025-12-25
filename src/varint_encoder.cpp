@@ -14,30 +14,6 @@ void VarIntEncoder::encodeValue(uint32_t value, std::vector<uint8_t>& output) {
     output.push_back(static_cast<uint8_t>(value & 0x7F));
 }
 
-uint32_t VarIntEncoder::decodeValue(const uint8_t** input) {
-    if (input == nullptr || *input == nullptr) {
-        throw std::runtime_error("Invalid offset in decodeVarInt");
-    }
-
-    uint32_t result = 0;
-    int shift = 0;
-
-    while (*input != nullptr) {
-        const uint8_t byte = **input;
-        (*input)++;
-
-        result |= static_cast<uint32_t>(byte & 0x7F) << shift;
-        if ((byte & 0x80) == 0) {
-            break;
-        }
-        shift += 7;
-        if (shift > 28) {
-            throw std::runtime_error("VarInt too large");
-        }
-    }
-    return result;
-}
-
 uint32_t VarIntEncoder::decodeValue(const std::vector<uint8_t>& data, size_t& offset) {
     if (offset >= data.size()) {
         throw std::runtime_error("Invalid offset in decodeVarInt");
@@ -60,37 +36,40 @@ uint32_t VarIntEncoder::decodeValue(const std::vector<uint8_t>& data, size_t& of
     return result;
 }
 
-std::vector<uint8_t> VarIntEncoder::encode(const std::vector<uint32_t>& values, const size_t start, const size_t end) {
-    if (values.empty() || start >= end || end > values.size()) {
+std::vector<uint8_t> VarIntEncoder::encode(const roaring::Roaring& roaring) {
+    if (roaring.isEmpty()) {
         return {};
     }
 
     std::vector<uint8_t> encoded;
+    std::vector<uint32_t> values(roaring.cardinality());
+    roaring.toUint32Array(values.data());
+
     // Encode first position
-    encodeValue(values[start], encoded);
+    encodeValue(values[0], encoded);
     // Encode deltas
-    for (size_t i = start + 1; i < end; ++i) {
+    for (size_t i = 1; i < values.size(); ++i) {
         const uint32_t delta = values[i] - values[i - 1];
         encodeValue(delta, encoded);
     }
     return encoded;
 }
 
-std::vector<uint32_t> VarIntEncoder::decode(const uint8_t* encoded, size_t size) {
-    if (encoded == nullptr || size == 0) {
-        return {};
+roaring::Roaring VarIntEncoder::decode(const std::vector<uint8_t>& data) {
+    if (data.empty()) {
+        return roaring::Roaring();
     }
 
+    size_t offset = 0;
     std::vector<uint32_t> positions;
-    const uint8_t* end = encoded + size;
-
-    uint32_t current_position = decodeValue(&encoded);
+    uint32_t current_position = decodeValue(data, offset);
     positions.push_back(current_position);
 
-    while (encoded < end) {
-        const uint32_t delta = decodeValue(&encoded);
+    while (offset < data.size()) {
+        const uint32_t delta = decodeValue(data, offset);
         current_position += delta;
         positions.push_back(current_position);
     }
-    return positions;
+
+    return roaring::Roaring(positions.size(), positions.data());
 }

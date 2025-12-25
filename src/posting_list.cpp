@@ -78,22 +78,22 @@ void PostingList::decode(const std::vector<uint8_t>& encoded_data) {
         return;
     }
 
-    const uint8_t* ptr = encoded_data.data();
+    size_t offset = 0;
 
     // Decode number of postings
-    const uint32_t num_postings = VarIntEncoder::decodeValue(&ptr);
+    const uint32_t num_postings = VarIntEncoder::decodeValue(encoded_data, offset);
 
     if (num_postings == 0) {
         return;
     }
 
     // Decode first doc_id
-    uint32_t current_doc_id = VarIntEncoder::decodeValue(&ptr);
+    uint32_t current_doc_id = VarIntEncoder::decodeValue(encoded_data, offset);
 
     // Decode first position list
-    uint32_t pos_size = VarIntEncoder::decodeValue(&ptr);
-    std::vector<uint8_t> pos_data(ptr, ptr + pos_size);
-    ptr += pos_size;
+    uint32_t pos_size = VarIntEncoder::decodeValue(encoded_data, offset);
+    std::vector<uint8_t> pos_data(encoded_data.begin() + offset, encoded_data.begin() + offset + pos_size);
+    offset += pos_size;
 
     postings_.emplace_back(current_doc_id);
     // Note: EncodingType is not stored anymore, we'll detect it from the data format
@@ -102,12 +102,12 @@ void PostingList::decode(const std::vector<uint8_t>& encoded_data) {
 
     // Decode subsequent postings
     for (uint32_t i = 1; i < num_postings; ++i) {
-        const uint32_t delta = VarIntEncoder::decodeValue(&ptr);
+        const uint32_t delta = VarIntEncoder::decodeValue(encoded_data, offset);
         current_doc_id += delta;
 
-        pos_size = VarIntEncoder::decodeValue(&ptr);
-        pos_data = std::vector<uint8_t>(ptr, ptr + pos_size);
-        ptr += pos_size;
+        pos_size = VarIntEncoder::decodeValue(encoded_data, offset);
+        pos_data = std::vector<uint8_t>(encoded_data.begin() + offset, encoded_data.begin() + offset + pos_size);
+        offset += pos_size;
 
         postings_.emplace_back(current_doc_id);
         postings_.back().positions.decode(pos_data, EncodingType::ADAPTIVE);

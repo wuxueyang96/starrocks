@@ -59,15 +59,15 @@ size_t Simple9Encoder::encodeBatch(const std::vector<uint32_t>& values, size_t s
     return best_count;
 }
 
-std::vector<uint8_t> Simple9Encoder::encode(const std::vector<uint32_t>& values, size_t start, size_t end) {
-    // Extract the range and encode
-    std::vector<uint32_t> range_values(values.begin() + start, values.begin() + end);
-    return encodeImpl(range_values);
+std::vector<uint8_t> Simple9Encoder::encode(const roaring::Roaring& roaring) {
+    std::vector<uint32_t> values(roaring.cardinality());
+    roaring.toUint32Array(values.data());
+    return encodeImpl(values);
 }
 
-std::vector<uint32_t> Simple9Encoder::decode(const uint8_t* encoded, size_t size) {
-    std::vector<uint8_t> encoded_vec(encoded, encoded + size);
-    return decodeImpl(encoded_vec);
+roaring::Roaring Simple9Encoder::decode(const std::vector<uint8_t>& data) {
+    std::vector<uint32_t> values = decodeImpl(data);
+    return roaring::Roaring(values.size(), values.data());
 }
 
 std::vector<uint8_t> Simple9Encoder::encodeImpl(const std::vector<uint32_t>& values) {

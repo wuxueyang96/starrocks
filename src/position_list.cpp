@@ -1,6 +1,7 @@
 #include "position_list.h"
 
 #include <algorithm>
+#include <roaring/roaring.hh>
 
 #include "encoder_factory.h"
 
@@ -21,9 +22,10 @@ std::vector<uint8_t> PositionList::encode(const EncodingType& encoding_type) con
     std::vector<uint32_t> sorted_positions = positions_;
     std::sort(sorted_positions.begin(), sorted_positions.end());
 
-    // Directly encode all positions without blocks
+    // Convert to Roaring bitmap and encode
+    roaring::Roaring roaring(sorted_positions.size(), sorted_positions.data());
     const auto encoder = EncoderFactory::createEncoder(encoding_type);
-    return encoder->encode(sorted_positions, 0, sorted_positions.size());
+    return encoder->encode(roaring);
 }
 
 void PositionList::decode(const std::vector<uint8_t>& encoded_data, const EncodingType& encoding_type) {
@@ -33,9 +35,12 @@ void PositionList::decode(const std::vector<uint8_t>& encoded_data, const Encodi
         return;
     }
 
-    // Directly decode all positions without blocks
+    // Decode to Roaring bitmap and extract positions
     const auto encoder = EncoderFactory::createEncoder(encoding_type);
-    positions_ = encoder->decode(encoded_data.data(), encoded_data.size());
+    roaring::Roaring roaring = encoder->decode(encoded_data);
+    
+    positions_.resize(roaring.cardinality());
+    roaring.toUint32Array(positions_.data());
 }
 
 const std::vector<uint32_t>& PositionList::getPositions() const {
