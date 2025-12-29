@@ -13,7 +13,8 @@ void test_basic_allocation() {
     
     LayeredMemoryPool pool;
     MemoryPoolConfig config(16 * 1024 * 1024); // 16 MB
-    assert(pool.initialize(config));
+    bool init_result = pool.initialize(config);
+    assert(init_result);
     
     // 测试小块分配
     void* p1 = pool.allocate(32);
@@ -53,23 +54,24 @@ void test_reallocation() {
     
     LayeredMemoryPool pool;
     MemoryPoolConfig config(8 * 1024 * 1024); // 8 MB
-    assert(pool.initialize(config));
+    bool init_result = pool.initialize(config);
+    assert(init_result);
     
     // 分配小块
     void* p = pool.allocate(32);
     assert(p != nullptr);
-    std::memset(p, 0xAB, 32);
+    ::memset(p, 0xAB, 32);
     
     // 重新分配为更大
     void* p2 = pool.reallocate(p, 128);
     assert(p2 != nullptr);
-    
+
     // 验证数据保留
     uint8_t* bytes = static_cast<uint8_t*>(p2);
     for (int i = 0; i < 32; ++i) {
         assert(bytes[i] == 0xAB);
     }
-    
+
     pool.deallocate(p2);
     pool.destroy();
     std::cout << "  PASSED!" << std::endl;
@@ -80,7 +82,8 @@ void test_calloc() {
     
     LayeredMemoryPool pool;
     MemoryPoolConfig config(8 * 1024 * 1024);
-    assert(pool.initialize(config));
+    bool init_result = pool.initialize(config);
+    assert(init_result);
     
     void* p = pool.callocate(10, 100);
     assert(p != nullptr);
@@ -101,7 +104,8 @@ void test_aligned_allocation() {
     
     LayeredMemoryPool pool;
     MemoryPoolConfig config(8 * 1024 * 1024);
-    assert(pool.initialize(config));
+    bool init_result = pool.initialize(config);
+    assert(init_result);
     
     // 测试不同对齐
     for (size_t alignment : {16, 32, 64, 128, 256}) {
@@ -124,7 +128,8 @@ void test_out_of_memory() {
     
     LayeredMemoryPool pool;
     MemoryPoolConfig config(1024 * 1024); // 只有 1MB
-    assert(pool.initialize(config));
+    bool init_result = pool.initialize(config);
+    assert(init_result);
     
     // 尝试分配超过池大小的内存
     void* p = pool.allocate(2 * 1024 * 1024);
@@ -159,7 +164,8 @@ void test_multithreaded() {
     
     LayeredMemoryPool pool;
     MemoryPoolConfig config(64 * 1024 * 1024); // 64 MB
-    assert(pool.initialize(config));
+    bool init_result = pool.initialize(config);
+    assert(init_result);
     
     constexpr int NUM_THREADS = 4;
     constexpr int ITERATIONS = 1000;
@@ -223,7 +229,8 @@ void test_roaring_integration() {
     auto& pool = LayeredMemoryPool::instance();
     MemoryPoolConfig config(32 * 1024 * 1024); // 32 MB
     if (!pool.is_initialized()) {
-        assert(pool.initialize(config));
+        bool init_result = pool.initialize(config);
+        assert(init_result);
     }
     
     // 注册到 roaring

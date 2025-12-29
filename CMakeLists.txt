@@ -238,4 +238,4 @@ target_link_libraries(varint_encoder_test roaring::roaring)
 
 # Memory pool test
 add_executable(test_memory_pool test_memory_pool.cpp src/memory_pool.cpp)
-target_link_libraries(test_memory_pool roaring::roaring)
+target_link_libraries(test_memory_pool roaring::roaring pthread)
