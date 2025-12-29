@@ -14,62 +14,33 @@ void VarIntEncoder::encodeValue(uint32_t value, std::vector<uint8_t>& output) {
     output.push_back(static_cast<uint8_t>(value & 0x7F));
 }
 
-uint32_t VarIntEncoder::decodeValue(const std::vector<uint8_t>& data, size_t& offset) {
-    if (offset >= data.size()) {
-        throw std::runtime_error("Invalid offset in decodeVarInt");
+Status VarIntEncoder::encode(const roaring::Roaring& roaring, std::vector<uint8_t>* result) {
+    if (!result) {
+        return Status::INVALID_INPUT;
     }
-
-    uint32_t result = 0;
-    int shift = 0;
-
-    while (offset < data.size()) {
-        const uint8_t byte = data[offset++];
-        result |= static_cast<uint32_t>(byte & 0x7F) << shift;
-        if ((byte & 0x80) == 0) {
-            break;
-        }
-        shift += 7;
-        if (shift > 28) {
-            throw std::runtime_error("VarInt too large");
-        }
-    }
-    return result;
-}
-
-std::vector<uint8_t> VarIntEncoder::encode(const roaring::Roaring& roaring) {
+    
     if (roaring.isEmpty()) {
-        return {};
+        result->clear();
+        return Status::OK;
     }
 
-    std::vector<uint8_t> encoded;
     std::vector<uint32_t> values(roaring.cardinality());
     roaring.toUint32Array(values.data());
 
     // Encode first position
-    encodeValue(values[0], encoded);
+    encodeValue(values[0], *result);
     // Encode deltas
     for (size_t i = 1; i < values.size(); ++i) {
         const uint32_t delta = values[i] - values[i - 1];
-        encodeValue(delta, encoded);
+        encodeValue(delta, *result);
     }
-    return encoded;
+    return Status::OK;
 }
 
-roaring::Roaring VarIntEncoder::decode(const std::vector<uint8_t>& data) {
-    if (data.empty()) {
-        return roaring::Roaring();
+Status VarIntEncoder::encode(uint32_t value, std::vector<uint8_t>* result) {
+    if (!result) {
+        return Status::INVALID_INPUT;
     }
-
-    size_t offset = 0;
-    std::vector<uint32_t> positions;
-    uint32_t current_position = decodeValue(data, offset);
-    positions.push_back(current_position);
-
-    while (offset < data.size()) {
-        const uint32_t delta = decodeValue(data, offset);
-        current_position += delta;
-        positions.push_back(current_position);
-    }
-
-    return roaring::Roaring(positions.size(), positions.data());
+    encodeValue(value, *result);
+    return Status::OK;
 }

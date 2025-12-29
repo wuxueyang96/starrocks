@@ -59,15 +59,23 @@ size_t Simple9Encoder::encodeBatch(const std::vector<uint32_t>& values, size_t s
     return best_count;
 }
 
-std::vector<uint8_t> Simple9Encoder::encode(const roaring::Roaring& roaring) {
+Status Simple9Encoder::encode(const roaring::Roaring& roaring, std::vector<uint8_t>* result) {
+    if (!result) {
+        return Status::INVALID_INPUT;
+    }
     std::vector<uint32_t> values(roaring.cardinality());
     roaring.toUint32Array(values.data());
-    return encodeImpl(values);
+    *result = encodeImpl(values);
+    return Status::OK;
 }
 
-roaring::Roaring Simple9Encoder::decode(const std::vector<uint8_t>& data) {
-    std::vector<uint32_t> values = decodeImpl(data);
-    return roaring::Roaring(values.size(), values.data());
+Status Simple9Encoder::encode(uint32_t value, std::vector<uint8_t>* result) {
+    if (!result) {
+        return Status::INVALID_INPUT;
+    }
+    std::vector<uint32_t> values = {value};
+    *result = encodeImpl(values);
+    return Status::OK;
 }
 
 std::vector<uint8_t> Simple9Encoder::encodeImpl(const std::vector<uint32_t>& values) {
@@ -88,56 +96,4 @@ std::vector<uint8_t> Simple9Encoder::encodeImpl(const std::vector<uint32_t>& val
     }
 
     return encoded;
-}
-
-std::vector<uint32_t> Simple9Encoder::decodeImpl(const std::vector<uint8_t>& encoded) {
-    std::vector<uint32_t> values;
-
-    if (encoded.empty()) {
-        return values;
-    }
-
-    size_t offset = 0;
-
-    // Decode count
-    const uint32_t count = VarIntEncoder::decodeValue(encoded, offset);
-    if (count == 0) {
-        return values;
-    }
-
-    values.reserve(count);
-
-    // Decode values until we have enough
-    while (values.size() < count && offset < encoded.size()) {
-        // Check if we have enough bytes for a 32-bit word
-        if (offset + 4 <= encoded.size()) {
-            // Read 32-bit word (little-endian)
-            const uint32_t word = static_cast<uint32_t>(encoded[offset]) |
-                                  (static_cast<uint32_t>(encoded[offset + 1]) << 8) |
-                                  (static_cast<uint32_t>(encoded[offset + 2]) << 16) |
-                                  (static_cast<uint32_t>(encoded[offset + 3]) << 24);
-            offset += 4;
-
-            // Extract selector (top 4 bits)
-            const uint8_t selector = static_cast<uint8_t>(word >> 28);
-
-            if (selector >= 9) {
-                throw std::runtime_error("Invalid Simple9 selector");
-            }
-
-            const auto& mode = MODES[selector];
-            const uint32_t mask = (1U << mode.bits) - 1;
-
-            // Extract integers (only up to count)
-            for (uint8_t i = 0; i < mode.count && values.size() < count; ++i) {
-                const uint32_t value = (word >> (i * mode.bits)) & mask;
-                values.push_back(value);
-            }
-        } else {
-            // Fallback: read VarInt
-            values.push_back(VarIntEncoder::decodeValue(encoded, offset));
-        }
-    }
-
-    return values;
 }

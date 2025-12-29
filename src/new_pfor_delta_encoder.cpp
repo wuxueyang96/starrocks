@@ -6,11 +6,14 @@
 #include <unordered_map>
 #include <cmath>
 
-std::vector<uint8_t> NewPForDeltaEncoder::encode(const roaring::Roaring& roaring) {
-    std::vector<uint8_t> encoded;
+Status NewPForDeltaEncoder::encode(const roaring::Roaring& roaring, std::vector<uint8_t>* result) {
+    if (!result) {
+        return Status::INVALID_INPUT;
+    }
     
     if (roaring.isEmpty()) {
-        return encoded;
+        result->clear();
+        return Status::OK;
     }
     
     std::vector<uint32_t> values(roaring.cardinality());
@@ -21,7 +24,7 @@ std::vector<uint8_t> NewPForDeltaEncoder::encode(const roaring::Roaring& roaring
     const size_t total_count = end - start;
     
     // Encode total count
-    VarIntEncoder::encodeValue(static_cast<uint32_t>(total_count), encoded);
+    VarIntEncoder::encodeValue(static_cast<uint32_t>(total_count), *result);
     
     // Process in variable-size blocks
     size_t pos = start;
@@ -33,59 +36,31 @@ std::vector<uint8_t> NewPForDeltaEncoder::encode(const roaring::Roaring& roaring
         const std::vector<uint8_t> block_data = encodeBlock(values, pos, block_end);
         
         // Store block size (variable)
-        VarIntEncoder::encodeValue(static_cast<uint32_t>(block_end - pos), encoded);
+        VarIntEncoder::encodeValue(static_cast<uint32_t>(block_end - pos), *result);
         
         // Store block data size
-        VarIntEncoder::encodeValue(static_cast<uint32_t>(block_data.size()), encoded);
+        VarIntEncoder::encodeValue(static_cast<uint32_t>(block_data.size()), *result);
         
         // Store block data
-        encoded.insert(encoded.end(), block_data.begin(), block_data.end());
+        result->insert(result->end(), block_data.begin(), block_data.end());
         
         pos = block_end;
     }
     
-    return encoded;
+    return Status::OK;
 }
 
-roaring::Roaring NewPForDeltaEncoder::decode(const std::vector<uint8_t>& data) {
-    std::vector<uint32_t> values;
-    
-    if (data.empty()) {
-        return roaring::Roaring();
+Status NewPForDeltaEncoder::encode(uint32_t value, std::vector<uint8_t>* result) {
+    if (!result) {
+        return Status::INVALID_INPUT;
     }
-    
-    size_t offset = 0;
-    
-    // Decode total count
-    const uint32_t total_count = VarIntEncoder::decodeValue(data, offset);
-    values.reserve(total_count);
-    
-    // Decode blocks
-    while (values.size() < total_count && offset < data.size()) {
-        // Read block element count (variable)
-        const uint32_t block_count = VarIntEncoder::decodeValue(data, offset);
-        
-        // Read block data size
-        const uint32_t block_data_size = VarIntEncoder::decodeValue(data, offset);
-        
-        if (offset + block_data_size > data.size()) {
-            throw std::runtime_error("Invalid block data size in NewPForDelta decode");
-        }
-        
-        // Create a view of just the block data
-        const size_t block_data_end = offset + block_data_size;
-        
-        // Decode block with bounded range
-        const size_t initial_size = values.size();
-        offset = decodeBlock(data, offset, block_data_end, values);
-        
-        // Verify we decoded the expected number of values
-        if (values.size() - initial_size != block_count) {
-            throw std::runtime_error("Block count mismatch in NewPForDelta decode");
-        }
-    }
-    
-    return roaring::Roaring(values.size(), values.data());
+    VarIntEncoder::encodeValue(1, *result);  // count = 1
+    VarIntEncoder::encodeValue(1, *result);  // block count = 1
+    std::vector<uint8_t> block_data;
+    VarIntEncoder::encodeValue(value, block_data);
+    VarIntEncoder::encodeValue(static_cast<uint32_t>(block_data.size()), *result);
+    result->insert(result->end(), block_data.begin(), block_data.end());
+    return Status::OK;
 }
 
 size_t NewPForDeltaEncoder::determineBlockSize(const std::vector<uint32_t>& values, size_t start, size_t end) {
@@ -231,117 +206,4 @@ std::vector<uint8_t> NewPForDeltaEncoder::encodeBlock(const std::vector<uint32_t
     }
     
     return encoded;
-}
-
-size_t NewPForDeltaEncoder::decodeBlock(const std::vector<uint8_t>& encoded, size_t offset, size_t end_offset, std::vector<uint32_t>& output) {
-    if (offset >= end_offset) {
-        return offset;
-    }
-    
-    // Decode base value
-    const uint32_t base = VarIntEncoder::decodeValue(encoded, offset);
-    
-    // Check if single value case
-    if (offset >= end_offset) {
-        output.push_back(base);
-        return offset;
-    }
-    
-    // Decode bits per value
-    const uint8_t bits_per_value = encoded[offset++];
-    
-    // Decode number of exceptions
-    const uint32_t num_exceptions = VarIntEncoder::decodeValue(encoded, offset);
-    
-    // Decode exception indices
-    std::vector<uint32_t> exception_indices;
-    exception_indices.reserve(num_exceptions);
-    for (uint32_t i = 0; i < num_exceptions; ++i) {
-        exception_indices.push_back(VarIntEncoder::decodeValue(encoded, offset));
-    }
-    
-    // Decode exception values using Simple9
-    std::vector<uint32_t> exception_values;
-    exception_values.reserve(num_exceptions);
-    
-    while (exception_values.size() < num_exceptions && offset < end_offset) {
-        if (offset + 4 <= end_offset) {
-            const uint32_t word = static_cast<uint32_t>(encoded[offset]) |
-                                  (static_cast<uint32_t>(encoded[offset + 1]) << 8) |
-                                  (static_cast<uint32_t>(encoded[offset + 2]) << 16) |
-                                  (static_cast<uint32_t>(encoded[offset + 3]) << 24);
-            offset += 4;
-            
-            const uint8_t selector = static_cast<uint8_t>(word >> 28);
-            
-            if (selector >= 9) {
-                throw std::runtime_error("Invalid Simple9 selector in NewPForDelta");
-            }
-            
-            const auto& mode = Simple9Encoder::MODES[selector];
-            const uint32_t mask = (1U << mode.bits) - 1;
-            
-            for (uint8_t i = 0; i < mode.count && exception_values.size() < num_exceptions; ++i) {
-                const uint32_t value = (word >> (i * mode.bits)) & mask;
-                exception_values.push_back(value);
-            }
-        } else {
-            break;
-        }
-    }
-    
-    // Build exception map
-    std::unordered_map<uint32_t, uint32_t> exceptions;
-    for (size_t i = 0; i < exception_indices.size(); ++i) {
-        exceptions[exception_indices[i]] = exception_values[i];
-    }
-    
-    if (bits_per_value == 0) {
-        // All values are the same - calculate count from max exception index
-        uint32_t count = 1;
-        if (!exception_indices.empty()) {
-            count = *std::max_element(exception_indices.begin(), exception_indices.end()) + 1;
-        }
-        for (uint32_t i = 0; i < count; ++i) {
-            const auto it = exceptions.find(i);
-            const uint32_t delta = (it != exceptions.end()) ? it->second : 0;
-            output.push_back(base + delta);
-        }
-        return end_offset;  // Move to end of block data
-    }
-    
-    // Unpack regular values until we reach end_offset
-    uint64_t buffer = 0;
-    size_t buffered_bits = 0;
-    uint32_t value_idx = 0;
-    
-    while (offset < end_offset || buffered_bits >= bits_per_value) {
-        // Ensure we have enough bits in buffer
-        while (buffered_bits < bits_per_value && offset < end_offset) {
-            buffer |= (static_cast<uint64_t>(encoded[offset++]) << buffered_bits);
-            buffered_bits += 8;
-        }
-        
-        if (buffered_bits < bits_per_value) {
-            break;
-        }
-        
-        // Extract delta
-        const uint64_t mask = (1ULL << bits_per_value) - 1;
-        uint32_t delta = static_cast<uint32_t>(buffer & mask);
-        
-        // Replace with exception value if exists
-        const auto it = exceptions.find(value_idx);
-        if (it != exceptions.end()) {
-            delta = it->second;
-        }
-        
-        output.push_back(base + delta);
-        value_idx++;
-        
-        buffer >>= bits_per_value;
-        buffered_bits -= bits_per_value;
-    }
-    
-    return end_offset;  // Ensure we move past the block data
 }

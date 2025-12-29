@@ -21,3 +21,8 @@ parquet:
 
 tokenizer:
   stop_words: []
+
+memory:
+  enable: true
+  total_size: 2147483648
+  small_block_ratio: 0.7

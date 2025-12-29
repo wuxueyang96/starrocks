@@ -5,6 +5,30 @@
 #include <vector>
 #include <roaring/roaring.hh>
 
+/**
+ * Status codes for encoder operations
+ */
+enum class Status {
+    OK = 0,              // Operation succeeded
+    INVALID_INPUT,       // Invalid input data
+    BUFFER_TOO_SMALL,    // Output buffer too small
+    OUT_OF_MEMORY,       // Memory allocation failed
+    CORRUPTED_DATA,      // Data corruption detected
+    UNKNOWN_ERROR        // Unknown error
+};
+
+inline const char* status_to_string(Status status) {
+    switch (status) {
+    case Status::OK: return "OK";
+    case Status::INVALID_INPUT: return "Invalid input";
+    case Status::BUFFER_TOO_SMALL: return "Buffer too small";
+    case Status::OUT_OF_MEMORY: return "Out of memory";
+    case Status::CORRUPTED_DATA: return "Corrupted data";
+    case Status::UNKNOWN_ERROR: return "Unknown error";
+    default: return "Unknown status";
+    }
+}
+
 enum class EncodingType {
     ADAPTIVE = 0,      // Automatically choose best encoding
     VARINT = 1,        // Variable-length integer encoding
@@ -35,7 +59,7 @@ inline std::string get_encoding_type_name(EncodingType encoding) {
 
 /**
  * Abstract base class for all integer encoders
- * Provides a common interface for encoding and decoding unsigned 32-bit integers
+ * Provides a common interface for encoding unsigned 32-bit integers
  */
 class Encoder {
 public:
@@ -44,16 +68,18 @@ public:
     /**
      * Encode a Roaring bitmap
      * @param roaring The Roaring bitmap to encode
-     * @return Encoded byte array
+     * @param result Output buffer for encoded data
+     * @return Status code
      */
-    virtual std::vector<uint8_t> encode(const roaring::Roaring& roaring) = 0;
+    virtual Status encode(const roaring::Roaring& roaring, std::vector<uint8_t>* result) = 0;
 
     /**
-     * Decode a byte array back to a Roaring bitmap
-     * @param data The encoded byte array
-     * @return Decoded Roaring bitmap
+     * Encode a single uint32 value
+     * @param value The value to encode
+     * @param result Output buffer for encoded data
+     * @return Status code
      */
-    virtual roaring::Roaring decode(const std::vector<uint8_t>& data) = 0;
+    virtual Status encode(uint32_t value, std::vector<uint8_t>* result) = 0;
 
     /**
      * Get the encoding type of this encoder

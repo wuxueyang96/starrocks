@@ -15,13 +15,12 @@ public:
     static constexpr size_t MAX_BLOCK_SIZE = 256;  // Maximum block size
     static constexpr size_t DEFAULT_BLOCK_SIZE = 128; // Default/target block size
     
-    std::vector<uint8_t> encode(const roaring::Roaring& roaring) override;
-    roaring::Roaring decode(const std::vector<uint8_t>& data) override;
+    Status encode(const roaring::Roaring& roaring, std::vector<uint8_t>* result) override;
+    Status encode(uint32_t value, std::vector<uint8_t>* result) override;
     EncodingType getType() const override { return EncodingType::NEW_PFOR_DELTA; }
     const char* getName() const override { return "NewPForDelta"; }
 
 private:
     static size_t determineBlockSize(const std::vector<uint32_t>& values, size_t start, size_t end);
     static std::vector<uint8_t> encodeBlock(const std::vector<uint32_t>& values, size_t start, size_t end);
-    static size_t decodeBlock(const std::vector<uint8_t>& encoded, size_t offset, size_t end_offset, std::vector<uint32_t>& output);
 };

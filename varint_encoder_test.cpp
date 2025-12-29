@@ -10,11 +10,9 @@ int main() {
     roaring::Roaring original;
     original.add(42);
 
-    std::vector<uint8_t> encoded = encoder_->encode(original);
+    std::vector<uint8_t> encoded;
+    Status status = encoder_->encode(original, &encoded);
+    std::cout << "encode status: " << (status == Status::OK ? "OK" : "FAILED") << std::endl;
     std::cout << "encoded bytes: " << encoded.size() << std::endl;
-
-    roaring::Roaring decoded = encoder_->decode(encoded);
-    std::cout << "decoded: " << decoded.cardinality() << std::endl;
-    std::cout << "contains origin val: " << decoded.contains(42) << std::endl;
     return 0;
 }

@@ -1,18 +1,9 @@
 #pragma once
 
-#include <unordered_map>
 #include <vector>
 
-#include "position_list.h"
-
-// Posting: document ID + position list
-struct Posting {
-    uint32_t doc_id;
-    PositionList positions;
-
-    Posting() : doc_id(0) {}
-    explicit Posting(const uint32_t id) : doc_id(id) {}
-};
+#include "bitmap_update_context.h"
+#include "encoder.h"
 
 // PostingList: list of postings for a term
 class PostingList {
@@ -24,7 +15,7 @@ public:
     void addPosting(uint32_t doc_id, uint32_t position);
 
     // Get all postings
-    const std::vector<Posting>& getPostings() const;
+    const std::vector<BitmapUpdateContextRefOrSingleValue>& getPositions() const;
 
     // Get number of documents containing this term
     size_t getDocFrequency() const;
@@ -33,10 +24,7 @@ public:
     // In ADAPTIVE mode, each position list can use different encoding
     std::vector<uint8_t> encode(EncodingType encoding_type) const;
 
-    // Decode from compressed bytes
-    void decode(const std::vector<uint8_t>& encoded_data);
-
 private:
-    std::vector<Posting> postings_;
-    std::unordered_map<uint32_t, size_t> doc_to_index_; // Map doc_id to index in postings_
+    std::vector<uint32_t> _doc_ids;
+    std::vector<BitmapUpdateContextRefOrSingleValue> _positions;
 };

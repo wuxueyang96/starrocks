@@ -38,6 +38,13 @@ Config Config::loadConfig(const std::string& config_path) {
             config.stop_words.insert(stop_words.begin(), stop_words.end());
         }
 
+        if (yaml["memory"]) {
+            auto memory = yaml["memory"];
+            config.enable_memory_pool = yaml["memory"]["enable"].as<bool>();
+            config.memory_pool_config.total_size = yaml["memory"]["total_size"].as<size_t>();
+            config.memory_pool_config.small_block_ratio = yaml["memory"]["small_block_ratio"].as<float>();
+        }
+
         config.index_output_path = "/tmp/inverted_index.bin";
         if (yaml["inverted_index"] && yaml["inverted_index"]["index_output_path"]) {
             config.index_output_path = yaml["inverted_index"]["index_output_path"].as<std::string>();

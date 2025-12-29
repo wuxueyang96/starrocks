@@ -8,6 +8,7 @@
 #include "include/config.h"
 #include "include/inverted_index.h"
 #include "include/s3_parquet_reader.h"
+#include "memory_pool.h"
 #include "tokenizer.h"
 
 AwsSdkInitializer initializer;
@@ -188,6 +189,18 @@ int main(int argc, char* argv[]) {
         std::cerr << "Failed to load configuration: " << e.what() << std::endl;
         return 1;
     }
+
+    std::cout << "\n=== Test Roaring Integration ===" << std::endl;
+
+    // 初始化全局内存池
+    auto& pool = LayeredMemoryPool::instance();
+    if (!pool.is_initialized()) {
+        assert(pool.initialize(config.memory_pool_config));
+    }
+
+    // 注册到 roaring
+    pool.register_with_roaring();
+    std::cout << "  Registered memory pool with roaring" << std::endl;
 
     try {
         // ========== Step 1: Read parquet file from S3 ==========

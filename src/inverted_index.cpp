@@ -108,82 +108,9 @@ bool InvertedIndex::saveToDisk(const std::string& file_path, CompressionType com
 }
 
 bool InvertedIndex::loadFromDisk(const std::string& file_path) {
-    std::ifstream file(file_path, std::ios::binary);
-    if (!file) {
-        std::cerr << "Error: Cannot open file for reading: " << file_path << std::endl;
-        return false;
-    }
-
-    clear();
-
-    // Read magic number
-    uint32_t magic;
-    file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
-    if (magic != 0x49444558) {
-        std::cerr << "Error: Invalid file format" << std::endl;
-        return false;
-    }
-
-    // Read version
-    uint32_t version;
-    file.read(reinterpret_cast<char*>(&version), sizeof(version));
-    if (version != 1) {
-        std::cerr << "Error: Unsupported file version: " << version << std::endl;
-        return false;
-    }
-
-    // Read compression type
-    uint8_t comp_type;
-    file.read(reinterpret_cast<char*>(&comp_type), sizeof(comp_type));
-    const CompressionType compression = static_cast<CompressionType>(comp_type);
-
-    // Read encoding type
-    uint8_t enc_type;
-    file.read(reinterpret_cast<char*>(&enc_type), sizeof(enc_type));
-    const EncodingType encoding = static_cast<EncodingType>(enc_type);
-
-    // Read number of terms
-    uint32_t num_terms;
-    file.read(reinterpret_cast<char*>(&num_terms), sizeof(num_terms));
-
-    // Read each term and its posting list
-    for (uint32_t i = 0; i < num_terms; ++i) {
-        // Read term length and term
-        uint32_t term_length;
-        file.read(reinterpret_cast<char*>(&term_length), sizeof(term_length));
-
-        std::string term(term_length, '\0');
-        file.read(&term[0], term_length);
-
-        // Read uncompressed size
-        uint32_t uncompressed_size;
-        file.read(reinterpret_cast<char*>(&uncompressed_size), sizeof(uncompressed_size));
-
-        // Read compressed/encoded size
-        uint32_t encoded_size;
-        file.read(reinterpret_cast<char*>(&encoded_size), sizeof(encoded_size));
-
-        // Read compressed/encoded data
-        std::vector<uint8_t> compressed_data(encoded_size);
-        file.read(reinterpret_cast<char*>(compressed_data.data()), encoded_size);
-
-        // Decompress if needed
-        std::vector<uint8_t> encoded_data;
-        if (compression != CompressionType::NONE) {
-            encoded_data = CompressionUtil::decompress(compressed_data, compression, uncompressed_size);
-        } else {
-            encoded_data = compressed_data;
-        }
-
-        // Decode posting list (encoding type is stored in the data)
-        index_[term].decode(encoded_data);
-    }
-
-    file.close();
-
-    std::cout << "Index loaded with compression: " << CompressionUtil::compressionTypeToString(compression)
-              << ", encoding: " << get_encoding_type_name(encoding) << std::endl;
-    return true;
+    // TODO: Decode functionality has been removed, loadFromDisk is disabled
+    std::cerr << "Error: loadFromDisk is not supported (decode functionality removed)" << std::endl;
+    return false;
 }
 
 void InvertedIndex::printStatistics() const {
@@ -194,8 +121,12 @@ void InvertedIndex::printStatistics() const {
     // Calculate average positions per posting
     size_t total_positions = 0;
     for (const auto& [_, posting_list] : index_) {
-        for (const auto& posting : posting_list.getPostings()) {
-            total_positions += posting.positions.size();
+        for (const auto& posting : posting_list.getPositions()) {
+            if (posting.is_context()) {
+                total_positions += posting.roaring()->cardinality();
+            } else {
+                total_positions += 1;
+            }
         }
     }
 

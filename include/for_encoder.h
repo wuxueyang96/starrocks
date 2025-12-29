@@ -9,8 +9,8 @@
  */
 class FrameOfReferenceEncoder final : public Encoder {
 public:
-    std::vector<uint8_t> encode(const roaring::Roaring& roaring) override;
-    roaring::Roaring decode(const std::vector<uint8_t>& data) override;
+    Status encode(const roaring::Roaring& roaring, std::vector<uint8_t>* result) override;
+    Status encode(uint32_t value, std::vector<uint8_t>* result) override;
     EncodingType getType() const override { return EncodingType::FOR_VARINT; }
     const char* getName() const override { return "FrameOfReference"; }
 };

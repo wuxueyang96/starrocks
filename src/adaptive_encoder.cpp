@@ -4,10 +4,16 @@
 #include <numeric>
 
 #include "encoder_factory.h"
+#include "varint_encoder.h"
 
-std::vector<uint8_t> AdaptiveEncoder::encode(const roaring::Roaring& roaring) {
+Status AdaptiveEncoder::encode(const roaring::Roaring& roaring, std::vector<uint8_t>* result) {
+    if (!result) {
+        return Status::INVALID_INPUT;
+    }
+    
     if (roaring.isEmpty()) {
-        return {};
+        result->clear();
+        return Status::OK;
     }
 
     // Try all encoding types and measure actual compressed size
@@ -23,7 +29,8 @@ std::vector<uint8_t> AdaptiveEncoder::encode(const roaring::Roaring& roaring) {
             // Create encoder and measure output size
             const auto encoder = EncoderFactory::createEncoder(encoding_type);
 
-            if (std::vector<uint8_t> encoded = encoder->encode(roaring); encoded.size() < best_size) {
+            std::vector<uint8_t> encoded;
+            if (encoder->encode(roaring, &encoded) == Status::OK && encoded.size() < best_size) {
                 best_size = encoded.size();
                 best_encoded = std::move(encoded);
                 best_type = encoding_type;
@@ -33,23 +40,18 @@ std::vector<uint8_t> AdaptiveEncoder::encode(const roaring::Roaring& roaring) {
     }
     
     // Prepend encoding type byte
-    std::vector<uint8_t> result;
-    result.reserve(1 + best_encoded.size());
-    result.push_back(static_cast<uint8_t>(best_type));
-    result.insert(result.end(), best_encoded.begin(), best_encoded.end());
-    return result;
+    result->reserve(1 + best_encoded.size());
+    result->push_back(static_cast<uint8_t>(best_type));
+    result->insert(result->end(), best_encoded.begin(), best_encoded.end());
+    return Status::OK;
 }
 
-roaring::Roaring AdaptiveEncoder::decode(const std::vector<uint8_t>& data) {
-    if (data.empty()) {
-        return roaring::Roaring();
+Status AdaptiveEncoder::encode(uint32_t value, std::vector<uint8_t>* result) {
+    if (!result) {
+        return Status::INVALID_INPUT;
     }
-    
-    // Read encoding type from first byte
-    const EncodingType encoding_type = static_cast<EncodingType>(data[0]);
-    
-    // Create appropriate decoder and decode remaining data
-    const auto encoder = EncoderFactory::createEncoder(encoding_type);
-    std::vector<uint8_t> encoded_data(data.begin() + 1, data.end());
-    return encoder->decode(encoded_data);
+    // For single value, use VarInt as default
+    result->push_back(static_cast<uint8_t>(EncodingType::VARINT));
+    VarIntEncoder encoder;
+    return encoder.encode(value, result);
 }
