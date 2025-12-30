@@ -43,6 +43,7 @@ Config Config::loadConfig(const std::string& config_path) {
             config.enable_memory_pool = yaml["memory"]["enable"].as<bool>();
             config.memory_pool_config.total_size = yaml["memory"]["total_size"].as<size_t>();
             config.memory_pool_config.small_block_ratio = yaml["memory"]["small_block_ratio"].as<float>();
+            config.memory_pool_config.enable_logging = yaml["memory"]["enable_logging"].as<bool>();
         }
 
         config.index_output_path = "/tmp/inverted_index.bin";
