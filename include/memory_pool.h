@@ -4,10 +4,36 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <vector>
 
 #include "config.h"
+
+/**
+ * DeferOp - RAII 延迟执行机制
+ * 在作用域结束时自动执行指定的操作
+ */
+class DeferOp {
+public:
+    template<typename F>
+    explicit DeferOp(F&& func) : func_(std::forward<F>(func)) {}
+
+    ~DeferOp() {
+        if (func_) {
+            func_();
+        }
+    }
+
+    // 禁止拷贝和移动
+    DeferOp(const DeferOp&) = delete;
+    DeferOp& operator=(const DeferOp&) = delete;
+    DeferOp(DeferOp&&) = delete;
+    DeferOp& operator=(DeferOp&&) = delete;
+
+private:
+    std::function<void()> func_;
+};
 
 extern "C" {
 #include <roaring/memory.h>

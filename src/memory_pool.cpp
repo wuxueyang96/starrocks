@@ -1,19 +1,12 @@
 #include "memory_pool.h"
 
-#include <algorithm>
 #include <cassert>
+#include <cstdio>
 #include <cstring>
-#include <stdexcept>
-
-// 全局单例
-static LayeredMemoryPool* g_memory_pool_instance = nullptr;
 
 LayeredMemoryPool& LayeredMemoryPool::instance() {
-    if (!g_memory_pool_instance) {
-        static LayeredMemoryPool pool;
-        g_memory_pool_instance = &pool;
-    }
-    return *g_memory_pool_instance;
+    static LayeredMemoryPool pool;
+    return pool;
 }
 
 LayeredMemoryPool::LayeredMemoryPool()
@@ -158,20 +151,24 @@ int LayeredMemoryPool::get_layer_index(size_t size) const {
 }
 
 void* LayeredMemoryPool::allocate(size_t size) {
+    void* result = nullptr;
+    DeferOp defer([&]() {
+        std::printf("[MemoryPool] allocate: size=%zu, ptr=%p\n", size, result);
+    });
+    
     if (!initialized_ || size == 0) {
-        return nullptr;
+        return result;
     }
     
-    void* ptr = nullptr;
     int layer = get_layer_index(size);
     
     if (layer >= 0) {
-        ptr = allocate_small(size);
+        result = allocate_small(size);
     } else {
-        ptr = allocate_large(size);
+        result = allocate_large(size);
     }
     
-    if (ptr) {
+    if (result) {
         ++allocation_count_;
         size_t current_used = used_size_.load();
         size_t peak = peak_used_size_.load();
@@ -182,7 +179,7 @@ void* LayeredMemoryPool::allocate(size_t size) {
         ++failed_allocations_;
     }
     
-    return ptr;
+    return result;
 }
 
 void* LayeredMemoryPool::allocate_small(size_t size) {
@@ -262,17 +259,25 @@ void* LayeredMemoryPool::allocate_large(size_t size) {
 }
 
 void* LayeredMemoryPool::reallocate(void* ptr, size_t new_size) {
+    void* result = nullptr;
+    DeferOp defer([&]() {
+        std::printf("[MemoryPool] reallocate: old_ptr=%p, new_size=%zu, new_ptr=%p\n", ptr, new_size, result);
+    });
+    
     if (!ptr) {
-        return allocate(new_size);
+        result = allocate(new_size);
+        return result;
     }
     
     if (new_size == 0) {
         deallocate(ptr);
-        return nullptr;
+        return result;  // result is nullptr
     }
     
     if (!owns(ptr)) {
-        return nullptr;
+        // Fallback to system realloc for memory not owned by this pool
+        result = std::realloc(ptr, new_size);
+        return result;
     }
     
     size_t old_size = 0;
@@ -290,13 +295,14 @@ void* LayeredMemoryPool::reallocate(void* ptr, size_t new_size) {
     
     // 如果新大小小于等于原大小，直接返回
     if (new_size <= old_size) {
-        return ptr;
+        result = ptr;
+        return result;
     }
     
     // 分配新内存
     void* new_ptr = allocate(new_size);
     if (!new_ptr) {
-        return nullptr;
+        return result;  // result is nullptr
     }
     
     // 复制数据
@@ -305,16 +311,22 @@ void* LayeredMemoryPool::reallocate(void* ptr, size_t new_size) {
     // 释放原内存
     deallocate(ptr);
     
-    return new_ptr;
+    result = new_ptr;
+    return result;
 }
 
 void* LayeredMemoryPool::callocate(size_t count, size_t size) {
+    void* result = nullptr;
     size_t total_size = count * size;
-    void* ptr = allocate(total_size);
-    if (ptr) {
-        std::memset(ptr, 0, total_size);
+    DeferOp defer([&]() {
+        std::printf("[MemoryPool] callocate: count=%zu, size=%zu, total=%zu, ptr=%p\n", count, size, total_size, result);
+    });
+    
+    result = allocate(total_size);
+    if (result) {
+        std::memset(result, 0, total_size);
     }
-    return ptr;
+    return result;
 }
 
 void LayeredMemoryPool::deallocate(void* ptr) {
@@ -323,6 +335,8 @@ void LayeredMemoryPool::deallocate(void* ptr) {
     }
     
     if (!owns(ptr)) {
+        // Fallback to system free for memory not owned by this pool
+        std::free(ptr);
         return;
     }
     
@@ -384,20 +398,25 @@ void LayeredMemoryPool::coalesce_large_blocks(LargeBlockHeader* block) {
 }
 
 void* LayeredMemoryPool::allocate_aligned(size_t alignment, size_t size) {
+    void* result = nullptr;
+    DeferOp defer([&]() {
+        std::printf("[MemoryPool] allocate_aligned: alignment=%zu, size=%zu, ptr=%p\n", alignment, size, result);
+    });
+    
     if (!initialized_ || size == 0) {
-        return nullptr;
+        return result;
     }
     
     // 确保 alignment 是 2 的幂
     if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
-        return nullptr;
+        return result;
     }
     
     // 分配足够的空间：原始大小 + 对齐偏移 + 元数据
     size_t total_size = size + alignment + sizeof(AlignedMetadata);
     void* raw_ptr = allocate(total_size);
     if (!raw_ptr) {
-        return nullptr;
+        return result;
     }
     
     // 计算对齐后的地址
@@ -409,7 +428,8 @@ void* LayeredMemoryPool::allocate_aligned(size_t alignment, size_t size) {
     metadata->original_ptr = raw_ptr;
     metadata->size = total_size;
     
-    return reinterpret_cast<void*>(aligned_addr);
+    result = reinterpret_cast<void*>(aligned_addr);
+    return result;
 }
 
 void LayeredMemoryPool::deallocate_aligned(void* ptr) {

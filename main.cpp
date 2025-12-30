@@ -194,8 +194,9 @@ int main(int argc, char* argv[]) {
 
     // 初始化全局内存池
     auto& pool = LayeredMemoryPool::instance();
-    if (!pool.is_initialized()) {
-        assert(pool.initialize(config.memory_pool_config));
+    if (!pool.is_initialized() && !pool.initialize(config.memory_pool_config)) {
+        std::cerr << "Failed to initialize memory pool." << std::endl;
+        return 1;
     }
 
     // 注册到 roaring
