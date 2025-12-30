@@ -1,4 +1,5 @@
 #include "varint_encoder.h"
+
 #include <algorithm>
 #include <stdexcept>
 
@@ -18,7 +19,7 @@ Status VarIntEncoder::encode(const roaring::Roaring& roaring, std::vector<uint8_
     if (!result) {
         return Status::INVALID_INPUT;
     }
-    
+
     if (roaring.isEmpty()) {
         result->clear();
         return Status::OK;

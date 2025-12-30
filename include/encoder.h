@@ -1,31 +1,38 @@
 #pragma once
 
 #include <cstdint>
+#include <roaring/roaring.hh>
 #include <string>
 #include <vector>
-#include <roaring/roaring.hh>
 
 /**
  * Status codes for encoder operations
  */
 enum class Status {
-    OK = 0,              // Operation succeeded
-    INVALID_INPUT,       // Invalid input data
-    BUFFER_TOO_SMALL,    // Output buffer too small
-    OUT_OF_MEMORY,       // Memory allocation failed
-    CORRUPTED_DATA,      // Data corruption detected
-    UNKNOWN_ERROR        // Unknown error
+    OK = 0,           // Operation succeeded
+    INVALID_INPUT,    // Invalid input data
+    BUFFER_TOO_SMALL, // Output buffer too small
+    OUT_OF_MEMORY,    // Memory allocation failed
+    CORRUPTED_DATA,   // Data corruption detected
+    UNKNOWN_ERROR     // Unknown error
 };
 
 inline const char* status_to_string(Status status) {
     switch (status) {
-    case Status::OK: return "OK";
-    case Status::INVALID_INPUT: return "Invalid input";
-    case Status::BUFFER_TOO_SMALL: return "Buffer too small";
-    case Status::OUT_OF_MEMORY: return "Out of memory";
-    case Status::CORRUPTED_DATA: return "Corrupted data";
-    case Status::UNKNOWN_ERROR: return "Unknown error";
-    default: return "Unknown status";
+    case Status::OK:
+        return "OK";
+    case Status::INVALID_INPUT:
+        return "Invalid input";
+    case Status::BUFFER_TOO_SMALL:
+        return "Buffer too small";
+    case Status::OUT_OF_MEMORY:
+        return "Out of memory";
+    case Status::CORRUPTED_DATA:
+        return "Corrupted data";
+    case Status::UNKNOWN_ERROR:
+        return "Unknown error";
+    default:
+        return "Unknown status";
     }
 }
 

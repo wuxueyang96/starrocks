@@ -11,6 +11,7 @@ public:
     ~Tokenizer();
 
     std::vector<std::string> tokenize(const std::string& text) const;
+
 private:
     std::unordered_set<std::string> stop_words;
 };

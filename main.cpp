@@ -21,7 +21,7 @@ EncodingType get_encoding_type_from_string(const std::string& encoding) {
         return EncodingType::SIMPLE9;
     }
     if (encoding == "for" || encoding == "FOR") {
-        return  EncodingType::FOR_VARINT;
+        return EncodingType::FOR_VARINT;
     }
     if (encoding == "pfor" || encoding == "PFOR" || encoding == "pfordelta" || encoding == "PFORDELTA") {
         return EncodingType::PFOR_DELTA;

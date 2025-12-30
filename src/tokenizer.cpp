@@ -1,7 +1,6 @@
 #include "tokenizer.h"
 
-Tokenizer::Tokenizer(const Config& config): stop_words(std::move(config.stop_words)) {
-}
+Tokenizer::Tokenizer(const Config& config) : stop_words(std::move(config.stop_words)) {}
 
 Tokenizer::~Tokenizer() = default;
 

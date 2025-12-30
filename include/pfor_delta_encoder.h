@@ -12,7 +12,7 @@
 class PForDeltaEncoder final : public Encoder {
 public:
     static constexpr size_t BLOCK_SIZE = 128; // Fixed block size
-    
+
     Status encode(const roaring::Roaring& roaring, std::vector<uint8_t>* result) override;
     Status encode(uint32_t value, std::vector<uint8_t>* result) override;
     EncodingType getType() const override { return EncodingType::PFOR_DELTA; }

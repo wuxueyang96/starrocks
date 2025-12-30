@@ -10,7 +10,7 @@ Status AdaptiveEncoder::encode(const roaring::Roaring& roaring, std::vector<uint
     if (!result) {
         return Status::INVALID_INPUT;
     }
-    
+
     if (roaring.isEmpty()) {
         result->clear();
         return Status::OK;
@@ -38,7 +38,7 @@ Status AdaptiveEncoder::encode(const roaring::Roaring& roaring, std::vector<uint
         } catch (...) {
         }
     }
-    
+
     // Prepend encoding type byte
     result->reserve(1 + best_encoded.size());
     result->push_back(static_cast<uint8_t>(best_type));

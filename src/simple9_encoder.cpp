@@ -1,13 +1,15 @@
 #include "simple9_encoder.h"
-#include "varint_encoder.h"
+
 #include <algorithm>
 #include <stdexcept>
+
+#include "varint_encoder.h"
 
 // Define static constexpr member
 constexpr Simple9Encoder::Simple9Mode Simple9Encoder::MODES[9];
 
 size_t Simple9Encoder::encodeBatch(const std::vector<uint32_t>& values, size_t start_idx,
-                                    std::vector<uint8_t>& output) {
+                                   std::vector<uint8_t>& output) {
     const size_t remaining = values.size() - start_idx;
     if (remaining == 0) {
         return 0;

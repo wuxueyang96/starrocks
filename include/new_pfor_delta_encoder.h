@@ -11,10 +11,10 @@
  */
 class NewPForDeltaEncoder final : public Encoder {
 public:
-    static constexpr size_t MIN_BLOCK_SIZE = 32;   // Minimum block size
-    static constexpr size_t MAX_BLOCK_SIZE = 256;  // Maximum block size
+    static constexpr size_t MIN_BLOCK_SIZE = 32;      // Minimum block size
+    static constexpr size_t MAX_BLOCK_SIZE = 256;     // Maximum block size
     static constexpr size_t DEFAULT_BLOCK_SIZE = 128; // Default/target block size
-    
+
     Status encode(const roaring::Roaring& roaring, std::vector<uint8_t>* result) override;
     Status encode(uint32_t value, std::vector<uint8_t>* result) override;
     EncodingType getType() const override { return EncodingType::NEW_PFOR_DELTA; }

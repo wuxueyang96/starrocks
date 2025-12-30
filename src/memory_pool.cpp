@@ -149,32 +149,34 @@ void* LayeredMemoryPool::allocate(size_t size) {
     void* result = nullptr;
     const char* fail_reason = nullptr;
     DeferOp defer([&]() {
-        if (result) {
-            std::printf("[MemoryPool] allocate: size=%zu, ptr=%p\n", size, result);
-        } else {
-            std::printf("[MemoryPool] allocate: size=%zu, ptr=null, reason=%s\n", size,
-                        fail_reason ? fail_reason : "unknown");
+        if (config_.enable_logging) {
+            if (result) {
+                std::printf("[MemoryPool] allocate: size=%zu, ptr=%p\n", size, result);
+            } else {
+                std::printf("[MemoryPool] allocate: size=%zu, ptr=null, reason=%s\n", size,
+                            fail_reason ? fail_reason : "unknown");
+            }
         }
     });
-
+    
     if (!initialized_) {
         fail_reason = "pool not initialized";
         return result;
     }
-
+    
     if (size == 0) {
         fail_reason = "size is zero";
         return result;
     }
-
+    
     int layer = get_layer_index(size);
-
+    
     if (layer >= 0) {
         result = allocate_small(size);
     } else {
         result = allocate_large(size);
     }
-
+    
     if (result) {
         ++allocation_count_;
         size_t current_used = used_size_.load();
@@ -185,7 +187,7 @@ void* LayeredMemoryPool::allocate(size_t size) {
         fail_reason = layer >= 0 ? "small block pool exhausted" : "large block pool exhausted";
         ++failed_allocations_;
     }
-
+    
     return result;
 }
 
@@ -269,11 +271,13 @@ void* LayeredMemoryPool::reallocate(void* ptr, size_t new_size) {
     void* result = nullptr;
     const char* fail_reason = nullptr;
     DeferOp defer([&]() {
-        if (result) {
-            std::printf("[MemoryPool] reallocate: old_ptr=%p, new_size=%zu, new_ptr=%p\n", ptr, new_size, result);
-        } else {
-            std::printf("[MemoryPool] reallocate: old_ptr=%p, new_size=%zu, new_ptr=null, reason=%s\n", ptr, new_size,
-                        fail_reason ? fail_reason : "unknown");
+        if (config_.enable_logging) {
+            if (result) {
+                std::printf("[MemoryPool] reallocate: old_ptr=%p, new_size=%zu, new_ptr=%p\n", ptr, new_size, result);
+            } else {
+                std::printf("[MemoryPool] reallocate: old_ptr=%p, new_size=%zu, new_ptr=null, reason=%s\n", ptr, new_size,
+                            fail_reason ? fail_reason : "unknown");
+            }
         }
     });
 
@@ -341,12 +345,14 @@ void* LayeredMemoryPool::callocate(size_t count, size_t size) {
     const char* fail_reason = nullptr;
     size_t total_size = count * size;
     DeferOp defer([&]() {
-        if (result) {
-            std::printf("[MemoryPool] callocate: count=%zu, size=%zu, total=%zu, ptr=%p\n", count, size, total_size,
-                        result);
-        } else {
-            std::printf("[MemoryPool] callocate: count=%zu, size=%zu, total=%zu, ptr=null, reason=%s\n", count, size,
-                        total_size, fail_reason ? fail_reason : "unknown");
+        if (config_.enable_logging) {
+            if (result) {
+                std::printf("[MemoryPool] callocate: count=%zu, size=%zu, total=%zu, ptr=%p\n", count, size, total_size,
+                            result);
+            } else {
+                std::printf("[MemoryPool] callocate: count=%zu, size=%zu, total=%zu, ptr=null, reason=%s\n", count, size,
+                            total_size, fail_reason ? fail_reason : "unknown");
+            }
         }
     });
 
@@ -383,49 +389,59 @@ void LayeredMemoryPool::deallocate(void* ptr) {
 void LayeredMemoryPool::deallocate_small(void* ptr, int layer_index) {
     // 防护：验证 layer_index 范围
     if (layer_index < 0 || layer_index >= static_cast<int>(NUM_LAYERS)) {
-        std::printf("[MemoryPool] ERROR: deallocate_small invalid layer_index=%d, ptr=%p\n", layer_index, ptr);
+        if (config_.enable_logging) {
+            std::printf("[MemoryPool] ERROR: deallocate_small invalid layer_index=%d, ptr=%p\n", layer_index, ptr);
+        }
         return;
     }
-
+    
     // 防护：验证 ptr 在有效范围内
     if (!owns(ptr)) {
-        std::printf("[MemoryPool] ERROR: deallocate_small ptr not owned, ptr=%p, layer=%d\n", ptr, layer_index);
+        if (config_.enable_logging) {
+            std::printf("[MemoryPool] ERROR: deallocate_small ptr not owned, ptr=%p, layer=%d\n", ptr, layer_index);
+        }
         return;
     }
-
+    
     std::lock_guard<std::mutex> lock(layer_mutexes_[layer_index]);
-
+    
     // 将内存块重新加入空闲链表（覆盖用户数据，写入 FreeBlock）
     FreeBlock* block = static_cast<FreeBlock*>(ptr);
     block->next = free_lists_[layer_index];
     free_lists_[layer_index] = block;
-
+    
     used_size_ -= BLOCK_SIZES[layer_index];
 }
 
 void LayeredMemoryPool::deallocate_large(void* ptr) {
     std::lock_guard<std::mutex> lock(large_block_mutex_);
-
+    
     LargeBlockHeader* header = get_large_block_header(ptr);
     if (!header) {
-        std::printf("[MemoryPool] ERROR: deallocate_large invalid ptr=%p, header is null\n", ptr);
+        if (config_.enable_logging) {
+            std::printf("[MemoryPool] ERROR: deallocate_large invalid ptr=%p, header is null\n", ptr);
+        }
         return;
     }
-
+    
     if (!header->in_use) {
-        std::printf("[MemoryPool] ERROR: deallocate_large double-free detected, ptr=%p\n", ptr);
+        if (config_.enable_logging) {
+            std::printf("[MemoryPool] ERROR: deallocate_large double-free detected, ptr=%p\n", ptr);
+        }
         return;
     }
-
+    
     // 防护：验证 header->size 合理性
     if (header->size == 0 || header->size > large_block_size_) {
-        std::printf("[MemoryPool] ERROR: deallocate_large corrupted header, ptr=%p, size=%zu\n", ptr, header->size);
+        if (config_.enable_logging) {
+            std::printf("[MemoryPool] ERROR: deallocate_large corrupted header, ptr=%p, size=%zu\n", ptr, header->size);
+        }
         return;
     }
-
+    
     used_size_ -= header->size;
     header->in_use = false;
-
+    
     // 尝试合并相邻的空闲块
     coalesce_large_blocks(header);
 }
@@ -433,15 +449,19 @@ void LayeredMemoryPool::deallocate_large(void* ptr) {
 void LayeredMemoryPool::coalesce_large_blocks(LargeBlockHeader* block) {
     // 防护：验证 block 指针
     if (!is_valid_large_block_header(block)) {
-        std::printf("[MemoryPool] ERROR: coalesce_large_blocks invalid block=%p\n", static_cast<void*>(block));
+        if (config_.enable_logging) {
+            std::printf("[MemoryPool] ERROR: coalesce_large_blocks invalid block=%p\n", static_cast<void*>(block));
+        }
         return;
     }
-
+    
     // 与后一个块合并
     if (block->next) {
         if (!is_valid_large_block_header(block->next)) {
-            std::printf("[MemoryPool] ERROR: coalesce_large_blocks corrupted next=%p\n",
-                        static_cast<void*>(block->next));
+            if (config_.enable_logging) {
+                std::printf("[MemoryPool] ERROR: coalesce_large_blocks corrupted next=%p\n",
+                            static_cast<void*>(block->next));
+            }
             block->next = nullptr;
         } else if (!block->next->in_use) {
             LargeBlockHeader* next_block = block->next;
@@ -452,12 +472,14 @@ void LayeredMemoryPool::coalesce_large_blocks(LargeBlockHeader* block) {
             }
         }
     }
-
+    
     // 与前一个块合并
     if (block->prev) {
         if (!is_valid_large_block_header(block->prev)) {
-            std::printf("[MemoryPool] ERROR: coalesce_large_blocks corrupted prev=%p\n",
-                        static_cast<void*>(block->prev));
+            if (config_.enable_logging) {
+                std::printf("[MemoryPool] ERROR: coalesce_large_blocks corrupted prev=%p\n",
+                            static_cast<void*>(block->prev));
+            }
             block->prev = nullptr;
         } else if (!block->prev->in_use) {
             LargeBlockHeader* prev_block = block->prev;
@@ -474,11 +496,13 @@ void* LayeredMemoryPool::allocate_aligned(size_t alignment, size_t size) {
     void* result = nullptr;
     const char* fail_reason = nullptr;
     DeferOp defer([&]() {
-        if (result) {
-            std::printf("[MemoryPool] allocate_aligned: alignment=%zu, size=%zu, ptr=%p\n", alignment, size, result);
-        } else {
-            std::printf("[MemoryPool] allocate_aligned: alignment=%zu, size=%zu, ptr=null, reason=%s\n", alignment,
-                        size, fail_reason ? fail_reason : "unknown");
+        if (config_.enable_logging) {
+            if (result) {
+                std::printf("[MemoryPool] allocate_aligned: alignment=%zu, size=%zu, ptr=%p\n", alignment, size, result);
+            } else {
+                std::printf("[MemoryPool] allocate_aligned: alignment=%zu, size=%zu, ptr=null, reason=%s\n", alignment,
+                            size, fail_reason ? fail_reason : "unknown");
+            }
         }
     });
 
@@ -523,42 +547,50 @@ void LayeredMemoryPool::deallocate_aligned(void* ptr) {
     if (!ptr || !initialized_) {
         return;
     }
-
+    
     // 防护：验证 ptr 在内存池范围内（先检查对齐地址本身）
     if (!owns(ptr)) {
-        std::printf("[MemoryPool] ERROR: deallocate_aligned ptr out of range, ptr=%p\n", ptr);
+        if (config_.enable_logging) {
+            std::printf("[MemoryPool] ERROR: deallocate_aligned ptr out of range, ptr=%p\n", ptr);
+        }
         return;
     }
-
+    
     // 读取元数据（在对齐地址前）
     auto ptr_addr = reinterpret_cast<uintptr_t>(ptr);
     auto metadata_addr = ptr_addr - sizeof(AlignedMetadata);
-
+    
     // 防护：验证 metadata 地址在有效范围内
     auto pool_start = reinterpret_cast<uintptr_t>(memory_);
     auto pool_end = pool_start + config_.total_size;
     if (metadata_addr < pool_start || metadata_addr + sizeof(AlignedMetadata) > pool_end) {
-        std::printf("[MemoryPool] ERROR: deallocate_aligned metadata address out of range, ptr=%p, metadata=%p\n", ptr,
-                    reinterpret_cast<void*>(metadata_addr));
+        if (config_.enable_logging) {
+            std::printf("[MemoryPool] ERROR: deallocate_aligned metadata address out of range, ptr=%p, metadata=%p\n", ptr,
+                        reinterpret_cast<void*>(metadata_addr));
+        }
         return;
     }
-
+    
     AlignedMetadata* metadata = reinterpret_cast<AlignedMetadata*>(metadata_addr);
-
+    
     // 防护：验证 original_ptr 有效
     if (!owns(metadata->original_ptr)) {
-        std::printf("[MemoryPool] ERROR: deallocate_aligned invalid original_ptr=%p, ptr=%p\n", metadata->original_ptr,
-                    ptr);
+        if (config_.enable_logging) {
+            std::printf("[MemoryPool] ERROR: deallocate_aligned invalid original_ptr=%p, ptr=%p\n", metadata->original_ptr,
+                        ptr);
+        }
         return;
     }
-
+    
     // 防护：验证 size 合理性
     if (metadata->size == 0 || metadata->size > config_.total_size) {
-        std::printf("[MemoryPool] ERROR: deallocate_aligned corrupted metadata, size=%zu, ptr=%p\n", metadata->size,
-                    ptr);
+        if (config_.enable_logging) {
+            std::printf("[MemoryPool] ERROR: deallocate_aligned corrupted metadata, size=%zu, ptr=%p\n", metadata->size,
+                        ptr);
+        }
         return;
     }
-
+    
     deallocate(metadata->original_ptr);
 }
 

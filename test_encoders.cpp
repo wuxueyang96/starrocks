@@ -1,19 +1,20 @@
+#include <algorithm>
 #include <cassert>
 #include <iostream>
-#include <vector>
 #include <random>
-#include <algorithm>
 #include <roaring/roaring.hh>
+#include <vector>
 
-#include "include/varint_encoder.h"
-#include "include/for_encoder.h"
-#include "include/pfor_delta_encoder.h"
-#include "include/new_pfor_delta_encoder.h"
-#include "include/simple9_encoder.h"
 #include "include/adaptive_encoder.h"
+#include "include/for_encoder.h"
+#include "include/new_pfor_delta_encoder.h"
+#include "include/pfor_delta_encoder.h"
+#include "include/simple9_encoder.h"
+#include "include/varint_encoder.h"
 
 // Test helper functions
-void assert_equal(const std::vector<uint32_t>& expected, const std::vector<uint32_t>& actual, const std::string& test_name) {
+void assert_equal(const std::vector<uint32_t>& expected, const std::vector<uint32_t>& actual,
+                  const std::string& test_name) {
     if (expected != actual) {
         std::cerr << "FAILED: " << test_name << std::endl;
         std::cerr << "Expected " << expected.size() << " values, got " << actual.size() << std::endl;
@@ -29,23 +30,23 @@ void assert_equal(const std::vector<uint32_t>& expected, const std::vector<uint3
     std::cout << "PASSED: " << test_name << std::endl;
 }
 
-void test_encoder(const std::string& encoder_name, const std::shared_ptr<Encoder>& encoder, const std::vector<uint32_t>& values) {
+void test_encoder(const std::string& encoder_name, const std::shared_ptr<Encoder>& encoder,
+                  const std::vector<uint32_t>& values) {
     roaring::Roaring roaring(values.size(), values.data());
     std::vector<uint8_t> encoded;
     Status status = encoder->encode(roaring, &encoded);
-    
+
     if (status != Status::OK) {
         std::cerr << "FAILED: " << encoder_name << " - encode failed" << std::endl;
         exit(1);
     }
-    
-    std::cout << encoder_name << " - Input size: " << values.size() 
-              << ", Encoded size: " << encoded.size();
+
+    std::cout << encoder_name << " - Input size: " << values.size() << ", Encoded size: " << encoded.size();
     if (!encoded.empty()) {
         std::cout << ", Compression ratio: " << (values.size() * 4.0 / encoded.size()) << "x";
     }
     std::cout << std::endl;
-    
+
     std::cout << "PASSED: " << encoder_name << " encode" << std::endl;
 }
 
@@ -104,7 +105,7 @@ void test_for_same_values() {
     // Roaring is a set, so use consecutive values with same delta
     std::vector<uint32_t> values;
     for (uint32_t i = 0; i < 20; ++i) {
-        values.push_back(42 + i);  // consecutive values starting from 42
+        values.push_back(42 + i); // consecutive values starting from 42
     }
     test_encoder("FOR (consecutive values)", encoder, values);
 }
@@ -121,7 +122,7 @@ void test_pfor_with_outliers() {
     values.push_back(10000);
     values.push_back(20000);
     values.push_back(30000);
-    
+
     test_encoder("PForDelta (with outliers)", encoder, values);
 }
 
@@ -146,7 +147,7 @@ void test_newpfor_sparse_outliers() {
     values.push_back(5000);
     values.push_back(8000);
     values.push_back(12000);
-    
+
     test_encoder("NewPForDelta (sparse outliers)", encoder, values);
 }
 
@@ -159,7 +160,7 @@ void test_newpfor_many_outliers() {
         if (i % 10 == 0) {
             current += 100; // larger gap (outlier)
         } else {
-            current += 1;   // small gap
+            current += 1; // small gap
         }
         values.push_back(current);
     }
@@ -224,17 +225,17 @@ void test_all_zeros() {
     for (uint32_t i = 0; i < 50; ++i) {
         values.push_back(i);
     }
-    
+
     auto varint = std::make_shared<VarIntEncoder>();
     test_encoder("VarInt (small consecutive)", varint, values);
-    
+
     auto for_enc = std::make_shared<FrameOfReferenceEncoder>();
     test_encoder("FOR (small consecutive)", for_enc, values);
 }
 
 void test_single_large_value() {
     std::vector<uint32_t> values = {4294967295}; // max uint32
-    
+
     auto varint = std::make_shared<VarIntEncoder>();
     test_encoder("VarInt (max uint32)", varint, values);
 }
@@ -243,12 +244,12 @@ void test_alternating_values() {
     // Roaring is a set, use unique values with large gaps
     std::vector<uint32_t> values;
     for (int i = 0; i < 50; ++i) {
-        values.push_back(i * 1000);  // values: 0, 1000, 2000, ...
+        values.push_back(i * 1000); // values: 0, 1000, 2000, ...
     }
-    
+
     auto pfor = std::make_shared<PForDeltaEncoder>();
     test_encoder("PForDelta (large gaps)", pfor, values);
-    
+
     auto newpfor = std::make_shared<NewPForDeltaEncoder>();
     test_encoder("NewPForDelta (large gaps)", newpfor, values);
 }
@@ -256,29 +257,29 @@ void test_alternating_values() {
 // ========== Random Data Tests ==========
 void test_random_data() {
     std::mt19937 gen(42); // Fixed seed for reproducibility
-    
+
     // Small random values - use unique sequential values with random gaps
     {
         std::vector<uint32_t> values;
         uint32_t current = 0;
         for (int i = 0; i < 100; ++i) {
-            current += (gen() % 10) + 1;  // Random gap 1-10
+            current += (gen() % 10) + 1; // Random gap 1-10
             values.push_back(current);
         }
-        
+
         auto adaptive = std::make_shared<AdaptiveEncoder>();
         test_encoder("Adaptive (random small)", adaptive, values);
     }
-    
+
     // Large random values - use unique sequential values with larger random gaps
     {
         std::vector<uint32_t> values;
         uint32_t current = 0;
         for (int i = 0; i < 100; ++i) {
-            current += (gen() % 10000) + 1;  // Random gap 1-10000
+            current += (gen() % 10000) + 1; // Random gap 1-10000
             values.push_back(current);
         }
-        
+
         auto adaptive = std::make_shared<AdaptiveEncoder>();
         test_encoder("Adaptive (random large)", adaptive, values);
     }
@@ -290,7 +291,7 @@ void test_large_dataset() {
     for (uint32_t i = 0; i < 10000; ++i) {
         values.push_back(i * 7);
     }
-    
+
     auto adaptive = std::make_shared<AdaptiveEncoder>();
     test_encoder("Adaptive (10K values)", adaptive, values);
 }
@@ -299,7 +300,7 @@ int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "  Encoder Unit Tests" << std::endl;
     std::cout << "========================================\n" << std::endl;
-    
+
     std::cout << "--- VarInt Encoder Tests ---" << std::endl;
     test_varint_empty();
     test_varint_single();
@@ -307,52 +308,52 @@ int main() {
     test_varint_large();
     test_varint_sequential();
     std::cout << std::endl;
-    
+
     std::cout << "--- FOR Encoder Tests ---" << std::endl;
     test_for_uniform();
     test_for_small_range();
     test_for_same_values();
     std::cout << std::endl;
-    
+
     std::cout << "--- PForDelta Encoder Tests ---" << std::endl;
     test_pfor_with_outliers();
     test_pfor_clustered();
     std::cout << std::endl;
-    
+
     std::cout << "--- NewPForDelta Encoder Tests ---" << std::endl;
     test_newpfor_sparse_outliers();
     test_newpfor_many_outliers();
     std::cout << std::endl;
-    
+
     std::cout << "--- Simple9 Encoder Tests ---" << std::endl;
     test_simple9_small();
     test_simple9_variable_sizes();
     test_simple9_large_batch();
     std::cout << std::endl;
-    
+
     std::cout << "--- Adaptive Encoder Tests ---" << std::endl;
     test_adaptive_selects_varint();
     test_adaptive_selects_for();
     test_adaptive_selects_pfor();
     std::cout << std::endl;
-    
+
     std::cout << "--- Edge Case Tests ---" << std::endl;
     test_all_zeros();
     test_single_large_value();
     test_alternating_values();
     std::cout << std::endl;
-    
+
     std::cout << "--- Random Data Tests ---" << std::endl;
     test_random_data();
     std::cout << std::endl;
-    
+
     std::cout << "--- Stress Tests ---" << std::endl;
     test_large_dataset();
     std::cout << std::endl;
-    
+
     std::cout << "========================================" << std::endl;
     std::cout << "  All Tests Passed!" << std::endl;
     std::cout << "========================================" << std::endl;
-    
+
     return 0;
 }

@@ -36,7 +36,7 @@ std::vector<uint8_t> PostingList::encode(EncodingType encoding_type) const {
     }
 
     auto encoder = EncoderFactory::createEncoder(encoding_type);
-    for (const auto& position: _positions) {
+    for (const auto& position : _positions) {
         if (position.is_context()) {
             auto& mutable_pos = const_cast<BitmapUpdateContextRefOrSingleValue&>(position);
             mutable_pos.flush_pending_adds();

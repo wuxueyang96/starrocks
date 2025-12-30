@@ -1,8 +1,8 @@
 #pragma once
 
-#include "encoder.h"
-
 #include <memory>
+
+#include "encoder.h"
 
 /**
  * Factory class for creating encoder instances

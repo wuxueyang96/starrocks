@@ -1,10 +1,11 @@
 #include "encoder_factory.h"
-#include "varint_encoder.h"
+
+#include "adaptive_encoder.h"
 #include "for_encoder.h"
+#include "new_pfor_delta_encoder.h"
 #include "pfor_delta_encoder.h"
 #include "simple9_encoder.h"
-#include "new_pfor_delta_encoder.h"
-#include "adaptive_encoder.h"
+#include "varint_encoder.h"
 
 std::shared_ptr<Encoder> EncoderFactory::createEncoder(const EncodingType type) {
     switch (type) {

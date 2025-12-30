@@ -9,7 +9,7 @@ Status FrameOfReferenceEncoder::encode(const roaring::Roaring& roaring, std::vec
     if (!result) {
         return Status::INVALID_INPUT;
     }
-    
+
     if (roaring.isEmpty()) {
         result->clear();
         return Status::OK;
@@ -79,7 +79,7 @@ Status FrameOfReferenceEncoder::encode(uint32_t value, std::vector<uint8_t>* res
     if (!result) {
         return Status::INVALID_INPUT;
     }
-    VarIntEncoder::encodeValue(1, *result);  // count = 1
+    VarIntEncoder::encodeValue(1, *result); // count = 1
     VarIntEncoder::encodeValue(value, *result);
     return Status::OK;
 }
