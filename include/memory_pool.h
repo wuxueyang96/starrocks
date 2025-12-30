@@ -49,25 +49,25 @@ extern "C" {
  * - 线程安全
  *
  * 层级设计：
- * - Layer 0: 32 字节块
- * - Layer 1: 64 字节块
- * - Layer 2: 128 字节块
- * - Layer 3: 256 字节块
- * - Layer 4: 512 字节块
- * - Layer 5: 1024 字节块
- * - Layer 6: 2048 字节块
- * - Layer 7: 4096 字节块
- * - 大块区域: > 4096 字节，使用首次适应算法
+ * - Layer 0: 8 字节块
+ * - Layer 1: 16 字节块
+ * - Layer 2: 32 字节块
+ * - Layer 3: 64 字节块
+ * - Layer 4: 128 字节块
+ * - Layer 5: 256 字节块
+ * - Layer 6: 512 字节块
+ * - Layer 7: 1024 字节块
+ * - 大块区域: > 1024 字节，使用首次适应算法
  */
 class LayeredMemoryPool {
 public:
     // 层级配置
     static constexpr size_t NUM_LAYERS = 8;
-    static constexpr size_t MIN_BLOCK_SIZE = 32;
+    static constexpr size_t MIN_BLOCK_SIZE = 8; // 最小 8 字节，刚好存储一个指针
     static constexpr size_t MAX_SMALL_BLOCK_SIZE = 4096;
 
-    // 每层的块大小
-    static constexpr std::array<size_t, NUM_LAYERS> BLOCK_SIZES = {4, 32, 128, 256, 512, 1024, 2048, 4096};
+    // 每层的块大小（最小 8 字节，确保能存储 FreeBlock::next 指针）
+    static constexpr std::array<size_t, NUM_LAYERS> BLOCK_SIZES = {8, 16, 32, 64, 128, 256, 512, 1024};
 
     /**
      * 内存池统计信息
@@ -84,9 +84,9 @@ public:
     };
 
 private:
-    // 小块的空闲链表节点
+    // 空闲块链表节点（在空闲时使用内存块本身存储，使用时被用户数据覆盖）
     struct FreeBlock {
-        FreeBlock* next;
+        FreeBlock* next; // 8 字节指针，因此最小块必须 >= 8 字节
     };
 
     // 大块分配的头部信息
@@ -112,7 +112,7 @@ private:
     uint8_t* small_block_start_;
     size_t small_block_size_;
 
-    // 每层的空闲链表
+    // 每层的空闲链表头（空闲时在内存块本身存储 FreeBlock）
     std::array<FreeBlock*, NUM_LAYERS> free_lists_;
     std::array<std::mutex, NUM_LAYERS> layer_mutexes_;
 
@@ -274,11 +274,6 @@ private:
      * 尝试合并相邻的空闲大块
      */
     void coalesce_large_blocks(LargeBlockHeader* block);
-
-    /**
-     * 验证小块指针是否有效
-     */
-    bool is_valid_small_block_ptr(void* ptr, int layer) const;
 
     /**
      * 验证大块头部指针是否有效

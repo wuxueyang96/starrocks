@@ -89,7 +89,6 @@ void LayeredMemoryPool::destroy() {
 
 void LayeredMemoryPool::init_small_blocks() {
     // 按比例分配每层的空间
-    // 小块使用频率更高，分配更多空间给小块层
     constexpr std::array<float, NUM_LAYERS> layer_ratios = {0.25f, 0.20f, 0.15f, 0.12f, 0.10f, 0.08f, 0.06f, 0.04f};
 
     uint8_t* current = small_block_start_;
@@ -99,13 +98,12 @@ void LayeredMemoryPool::init_small_blocks() {
         size_t layer_size = static_cast<size_t>(small_block_size_ * layer_ratios[layer]);
         size_t block_size = BLOCK_SIZES[layer];
 
-        // 确保层大小是块大小的整数倍
         size_t num_blocks = layer_size / block_size;
         if (num_blocks == 0 && remaining >= block_size) {
             num_blocks = 1;
         }
 
-        // 构建空闲链表
+        // 构建空闲链表（在空闲内存块上存储 FreeBlock）
         FreeBlock* head = nullptr;
         for (size_t i = 0; i < num_blocks && remaining >= block_size; ++i) {
             FreeBlock* block = reinterpret_cast<FreeBlock*>(current);
@@ -201,15 +199,6 @@ void* LayeredMemoryPool::allocate_small(size_t size) {
 
     if (free_lists_[layer]) {
         FreeBlock* block = free_lists_[layer];
-
-        // 防护：验证 block 指针在小块区域内
-        if (!is_valid_small_block_ptr(block, layer)) {
-            std::printf("[MemoryPool] ERROR: corrupted free_list[%d], block=%p is invalid\n", layer,
-                        static_cast<void*>(block));
-            free_lists_[layer] = nullptr; // 截断损坏的链表
-            return nullptr;
-        }
-
         free_lists_[layer] = block->next;
 
         used_size_ += BLOCK_SIZES[layer];
@@ -223,15 +212,6 @@ void* LayeredMemoryPool::allocate_small(size_t size) {
         std::lock_guard<std::mutex> upper_lock(layer_mutexes_[i]);
         if (free_lists_[i]) {
             FreeBlock* block = free_lists_[i];
-
-            // 防护：验证 block 指针在小块区域内
-            if (!is_valid_small_block_ptr(block, i)) {
-                std::printf("[MemoryPool] ERROR: corrupted free_list[%d], block=%p is invalid\n", i,
-                            static_cast<void*>(block));
-                free_lists_[i] = nullptr;
-                continue;
-            }
-
             free_lists_[i] = block->next;
 
             used_size_ += BLOCK_SIZES[i];
@@ -415,39 +395,7 @@ void LayeredMemoryPool::deallocate_small(void* ptr, int layer_index) {
 
     std::lock_guard<std::mutex> lock(layer_mutexes_[layer_index]);
 
-    // 防护：检查 double-free（只检查前几个节点，避免遍历过长的链表）
-    FreeBlock* current = free_lists_[layer_index];
-    size_t check_count = 0;
-    constexpr size_t MAX_CHECK = 100; // 只检查前 100 个节点
-    while (current && check_count < MAX_CHECK) {
-        // 防护：先验证 current 本身的有效性
-        if (!owns(current) || !is_valid_small_block_ptr(current, layer_index)) {
-            std::printf("[MemoryPool] ERROR: corrupted free_list[%d], current=%p is invalid\n", layer_index,
-                        static_cast<void*>(current));
-            free_lists_[layer_index] = nullptr;
-            break;
-        }
-
-        if (current == ptr) {
-            std::printf("[MemoryPool] ERROR: double-free detected, ptr=%p, layer=%d\n", ptr, layer_index);
-            return;
-        }
-
-        // 防护：验证 current->next 在有效范围内
-        FreeBlock* next_ptr = current->next;
-        if (next_ptr) {
-            // 先检查指针是否在有效范围，再调用 is_valid_small_block_ptr
-            if (!owns(next_ptr) || !is_valid_small_block_ptr(next_ptr, layer_index)) {
-                std::printf("[MemoryPool] ERROR: corrupted free_list chain at layer=%d, current=%p, next=%p\n",
-                            layer_index, static_cast<void*>(current), static_cast<void*>(next_ptr));
-                current->next = nullptr; // 截断损坏的链表
-                break;
-            }
-        }
-        current = next_ptr;
-        ++check_count;
-    }
-
+    // 将内存块重新加入空闲链表（覆盖用户数据，写入 FreeBlock）
     FreeBlock* block = static_cast<FreeBlock*>(ptr);
     block->next = free_lists_[layer_index];
     free_lists_[layer_index] = block;
@@ -667,27 +615,6 @@ LayeredMemoryPool::LargeBlockHeader* LayeredMemoryPool::get_large_block_header(v
     }
 
     return reinterpret_cast<LargeBlockHeader*>(reinterpret_cast<uint8_t*>(ptr) - sizeof(LargeBlockHeader));
-}
-
-bool LayeredMemoryPool::is_valid_small_block_ptr(void* ptr, int layer) const {
-    if (!ptr || !initialized_) {
-        return false;
-    }
-
-    if (layer < 0 || layer >= static_cast<int>(NUM_LAYERS)) {
-        return false;
-    }
-
-    auto addr = reinterpret_cast<uintptr_t>(ptr);
-    auto small_start = reinterpret_cast<uintptr_t>(small_block_start_);
-    auto small_end = small_start + small_block_size_;
-
-    // 验证指针在小块区域内
-    if (addr < small_start || addr >= small_end) {
-        return false;
-    }
-
-    return true;
 }
 
 bool LayeredMemoryPool::is_valid_large_block_header(LargeBlockHeader* header) const {
