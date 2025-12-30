@@ -276,7 +276,7 @@ void print_stats(const LayeredMemoryPool::Stats& stats) {
     std::cout << "  Failed allocations: " << stats.failed_allocations << std::endl;
     
     std::cout << "  Layer allocations:" << std::endl;
-    const char* layer_names[] = {"32B", "64B", "128B", "256B", "512B", "1KB", "2KB", "4KB"};
+    const char* layer_names[] = {"4B", "32B", "128B", "256B", "512B", "1KB", "2KB", "4KB"};
     for (size_t i = 0; i < stats.layer_allocations.size(); ++i) {
         if (stats.layer_allocations[i] > 0) {
             std::cout << "    " << layer_names[i] << ": " << stats.layer_allocations[i] << std::endl;
