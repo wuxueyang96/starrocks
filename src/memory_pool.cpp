@@ -152,11 +152,22 @@ int LayeredMemoryPool::get_layer_index(size_t size) const {
 
 void* LayeredMemoryPool::allocate(size_t size) {
     void* result = nullptr;
+    const char* fail_reason = nullptr;
     DeferOp defer([&]() {
-        std::printf("[MemoryPool] allocate: size=%zu, ptr=%p\n", size, result);
+        if (result) {
+            std::printf("[MemoryPool] allocate: size=%zu, ptr=%p\n", size, result);
+        } else {
+            std::printf("[MemoryPool] allocate: size=%zu, ptr=null, reason=%s\n", size, fail_reason ? fail_reason : "unknown");
+        }
     });
     
-    if (!initialized_ || size == 0) {
+    if (!initialized_) {
+        fail_reason = "pool not initialized";
+        return result;
+    }
+    
+    if (size == 0) {
+        fail_reason = "size is zero";
         return result;
     }
     
@@ -176,6 +187,7 @@ void* LayeredMemoryPool::allocate(size_t size) {
                !peak_used_size_.compare_exchange_weak(peak, current_used)) {
         }
     } else {
+        fail_reason = layer >= 0 ? "small block pool exhausted" : "large block pool exhausted";
         ++failed_allocations_;
     }
     
@@ -260,23 +272,35 @@ void* LayeredMemoryPool::allocate_large(size_t size) {
 
 void* LayeredMemoryPool::reallocate(void* ptr, size_t new_size) {
     void* result = nullptr;
+    const char* fail_reason = nullptr;
     DeferOp defer([&]() {
-        std::printf("[MemoryPool] reallocate: old_ptr=%p, new_size=%zu, new_ptr=%p\n", ptr, new_size, result);
+        if (result) {
+            std::printf("[MemoryPool] reallocate: old_ptr=%p, new_size=%zu, new_ptr=%p\n", ptr, new_size, result);
+        } else {
+            std::printf("[MemoryPool] reallocate: old_ptr=%p, new_size=%zu, new_ptr=null, reason=%s\n", ptr, new_size, fail_reason ? fail_reason : "unknown");
+        }
     });
     
     if (!ptr) {
         result = allocate(new_size);
+        if (!result) {
+            fail_reason = "allocate for null ptr failed";
+        }
         return result;
     }
     
     if (new_size == 0) {
         deallocate(ptr);
+        fail_reason = "new_size is zero (deallocated)";
         return result;  // result is nullptr
     }
     
     if (!owns(ptr)) {
         // Fallback to system realloc for memory not owned by this pool
         result = std::realloc(ptr, new_size);
+        if (!result) {
+            fail_reason = "system realloc failed";
+        }
         return result;
     }
     
@@ -302,6 +326,7 @@ void* LayeredMemoryPool::reallocate(void* ptr, size_t new_size) {
     // 分配新内存
     void* new_ptr = allocate(new_size);
     if (!new_ptr) {
+        fail_reason = "allocate new memory failed";
         return result;  // result is nullptr
     }
     
@@ -317,14 +342,21 @@ void* LayeredMemoryPool::reallocate(void* ptr, size_t new_size) {
 
 void* LayeredMemoryPool::callocate(size_t count, size_t size) {
     void* result = nullptr;
+    const char* fail_reason = nullptr;
     size_t total_size = count * size;
     DeferOp defer([&]() {
-        std::printf("[MemoryPool] callocate: count=%zu, size=%zu, total=%zu, ptr=%p\n", count, size, total_size, result);
+        if (result) {
+            std::printf("[MemoryPool] callocate: count=%zu, size=%zu, total=%zu, ptr=%p\n", count, size, total_size, result);
+        } else {
+            std::printf("[MemoryPool] callocate: count=%zu, size=%zu, total=%zu, ptr=null, reason=%s\n", count, size, total_size, fail_reason ? fail_reason : "unknown");
+        }
     });
     
     result = allocate(total_size);
     if (result) {
         std::memset(result, 0, total_size);
+    } else {
+        fail_reason = "allocate failed";
     }
     return result;
 }
@@ -399,16 +431,28 @@ void LayeredMemoryPool::coalesce_large_blocks(LargeBlockHeader* block) {
 
 void* LayeredMemoryPool::allocate_aligned(size_t alignment, size_t size) {
     void* result = nullptr;
+    const char* fail_reason = nullptr;
     DeferOp defer([&]() {
-        std::printf("[MemoryPool] allocate_aligned: alignment=%zu, size=%zu, ptr=%p\n", alignment, size, result);
+        if (result) {
+            std::printf("[MemoryPool] allocate_aligned: alignment=%zu, size=%zu, ptr=%p\n", alignment, size, result);
+        } else {
+            std::printf("[MemoryPool] allocate_aligned: alignment=%zu, size=%zu, ptr=null, reason=%s\n", alignment, size, fail_reason ? fail_reason : "unknown");
+        }
     });
     
-    if (!initialized_ || size == 0) {
+    if (!initialized_) {
+        fail_reason = "pool not initialized";
+        return result;
+    }
+    
+    if (size == 0) {
+        fail_reason = "size is zero";
         return result;
     }
     
     // 确保 alignment 是 2 的幂
     if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+        fail_reason = "invalid alignment (must be power of 2)";
         return result;
     }
     
@@ -416,6 +460,7 @@ void* LayeredMemoryPool::allocate_aligned(size_t alignment, size_t size) {
     size_t total_size = size + alignment + sizeof(AlignedMetadata);
     void* raw_ptr = allocate(total_size);
     if (!raw_ptr) {
+        fail_reason = "underlying allocate failed";
         return result;
     }
     
