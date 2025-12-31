@@ -17,7 +17,8 @@ void BitmapInvertedIndex::addTerm(const std::string& term, uint32_t doc_id, uint
 
 const roaring::Roaring64Map& BitmapInvertedIndex::getPostingList(const std::string& term) const {
     if (_index.find(term) == _index.end()) {
-        return roaring::Roaring64Map();
+        static const roaring::Roaring64Map kEmpty;
+        return kEmpty;
     }
     return _index.at(term);
 }
@@ -122,7 +123,7 @@ bool BitmapInvertedIndex::loadFromDisk(const std::string& file_path) {
         while (encoded_size > 0) {
             const uint32_t byte_to_read =
                     std::min(encoded_size, static_cast<size_t>(std::numeric_limits<int32_t>::max()));
-            file.read(ptr + offset, sizeof(byte_to_read));
+            file.read(ptr + offset, byte_to_read);
             encoded_size -= byte_to_read;
             offset += byte_to_read;
         }

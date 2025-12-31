@@ -113,6 +113,9 @@ private:
     // 小块区域
     uint8_t* small_block_start_;
     size_t small_block_size_;
+    // 每层在小块区域内的实际地址范围（由 init_small_blocks() 真实计算）
+    std::array<uint8_t*, NUM_LAYERS> small_layer_starts_{};
+    std::array<uint8_t*, NUM_LAYERS> small_layer_ends_{};
 
     // 每层的空闲链表头（空闲时在内存块本身存储 FreeBlock）
     std::array<FreeBlock*, NUM_LAYERS> free_lists_;
@@ -134,6 +137,10 @@ private:
     std::atomic<size_t> large_allocations_;
 
     bool initialized_;
+    // Thread-local cache invalidation keys:
+    // - instance_id_: unique per LayeredMemoryPool object lifetime (even if stack address is reused)
+    // - epoch_: increments on initialize/destroy to invalidate caches across re-init
+    uint64_t instance_id_;
     std::atomic<uint64_t> epoch_;
 
 public:

@@ -7,9 +7,9 @@
 namespace {
 
 // Thread-local cache for small blocks to reduce mutex contention.
-// Important: this cache is keyed to a single pool instance + epoch per thread.
+// Important: this cache is keyed to a single pool instance_id + epoch per thread.
 struct ThreadSmallBlockCache {
-    LayeredMemoryPool* pool = nullptr;
+    uint64_t instance_id = 0;
     uint64_t epoch = 0;
     std::array<LayeredMemoryPool::FreeBlock*, LayeredMemoryPool::NUM_LAYERS> heads{};
     std::array<size_t, LayeredMemoryPool::NUM_LAYERS> counts{};
@@ -20,9 +20,9 @@ thread_local ThreadSmallBlockCache g_tls_cache;
 constexpr size_t kLocalRefillBatch = 32;
 constexpr size_t kLocalCacheLimit = 128;
 
-inline void tls_cache_reset_if_needed(LayeredMemoryPool* pool, uint64_t epoch) {
-    if (g_tls_cache.pool != pool || g_tls_cache.epoch != epoch) {
-        g_tls_cache.pool = pool;
+inline void tls_cache_reset_if_needed(uint64_t instance_id, uint64_t epoch) {
+    if (g_tls_cache.instance_id != instance_id || g_tls_cache.epoch != epoch) {
+        g_tls_cache.instance_id = instance_id;
         g_tls_cache.epoch = epoch;
         for (size_t i = 0; i < LayeredMemoryPool::NUM_LAYERS; ++i) {
             g_tls_cache.heads[i] = nullptr;
@@ -327,10 +327,16 @@ LayeredMemoryPool::LayeredMemoryPool()
           failed_allocations_(0),
           large_allocations_(0),
           initialized_(false),
-          epoch_(1) {
+          instance_id_(0),
+          epoch_(0) {
+    static std::atomic<uint64_t> s_instance_counter{1};
+    instance_id_ = s_instance_counter.fetch_add(1, std::memory_order_relaxed);
+
     for (size_t i = 0; i < NUM_LAYERS; ++i) {
         free_lists_[i] = nullptr;
         layer_allocations_[i] = 0;
+        small_layer_starts_[i] = nullptr;
+        small_layer_ends_[i] = nullptr;
     }
 }
 
@@ -344,7 +350,7 @@ bool LayeredMemoryPool::initialize(const MemoryPoolConfig& config) {
     }
 
     config_ = config;
-    ++epoch_;
+    epoch_.fetch_add(1, std::memory_order_relaxed);
 
     // 分配原始内存
     memory_ = static_cast<uint8_t*>(std::malloc(config_.total_size));
@@ -375,7 +381,7 @@ void LayeredMemoryPool::destroy() {
         return;
     }
 
-    ++epoch_;
+    epoch_.fetch_add(1, std::memory_order_relaxed);
 
     if (memory_) {
         std::free(memory_);
@@ -390,6 +396,8 @@ void LayeredMemoryPool::destroy() {
 
     for (size_t i = 0; i < NUM_LAYERS; ++i) {
         free_lists_[i] = nullptr;
+        small_layer_starts_[i] = nullptr;
+        small_layer_ends_[i] = nullptr;
     }
 
     initialized_ = false;
@@ -403,6 +411,7 @@ void LayeredMemoryPool::init_small_blocks() {
     size_t remaining = small_block_size_;
 
     for (size_t layer = 0; layer < NUM_LAYERS; ++layer) {
+        small_layer_starts_[layer] = current;
         size_t layer_size = static_cast<size_t>(small_block_size_ * layer_ratios[layer]);
         size_t block_size = BLOCK_SIZES[layer];
 
@@ -422,6 +431,7 @@ void LayeredMemoryPool::init_small_blocks() {
         }
 
         free_lists_[layer] = head;
+        small_layer_ends_[layer] = current;
     }
 }
 
@@ -464,7 +474,7 @@ void* LayeredMemoryPool::allocate_small(size_t size) {
     }
 
     // Per-thread cache keying: (pool pointer, epoch).
-    tls_cache_reset_if_needed(this, epoch_.load());
+    tls_cache_reset_if_needed(instance_id_, epoch_.load(std::memory_order_relaxed));
 
     auto refill_from_global = [&](int l) {
         std::lock_guard<std::mutex> lock(layer_mutexes_[l]);
@@ -596,7 +606,7 @@ void LayeredMemoryPool::deallocate_small(void* ptr, int layer_index) {
     }
 
     // 将内存块重新加入 TLS 缓存，降低全局锁争用
-    tls_cache_reset_if_needed(this, epoch_.load());
+    tls_cache_reset_if_needed(instance_id_, epoch_.load(std::memory_order_relaxed));
     FreeBlock* block = static_cast<FreeBlock*>(ptr);
     tls_push(layer_index, block);
 
@@ -792,19 +802,16 @@ int LayeredMemoryPool::get_layer_for_ptr(void* ptr) const {
         return -1; // 大块区域
     }
 
-    // 计算在小块区域的偏移
-    size_t offset = addr - small_start;
-
-    // 根据偏移确定层级
-    constexpr std::array<float, NUM_LAYERS> layer_ratios = {0.25f, 0.20f, 0.15f, 0.12f, 0.10f, 0.08f, 0.06f, 0.04f};
-
-    size_t layer_offset = 0;
+    // 用 init_small_blocks() 计算出的“真实边界”判断层级，避免比例/取整导致的错误分类
     for (size_t layer = 0; layer < NUM_LAYERS; ++layer) {
-        size_t layer_size = static_cast<size_t>(small_block_size_ * layer_ratios[layer]);
-        if (offset < layer_offset + layer_size) {
+        auto start = reinterpret_cast<uintptr_t>(small_layer_starts_[layer]);
+        auto end = reinterpret_cast<uintptr_t>(small_layer_ends_[layer]);
+        if (start == 0 || end == 0) {
+            continue;
+        }
+        if (addr >= start && addr < end) {
             return static_cast<int>(layer);
         }
-        layer_offset += layer_size;
     }
 
     return -1;
