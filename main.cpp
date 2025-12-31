@@ -190,18 +190,20 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::cout << "\n=== Test Roaring Integration ===" << std::endl;
+    if (config.enable_memory_pool) {
+        std::cout << "\n=== Roaring Integration ===" << std::endl;
 
-    // 初始化全局内存池
-    auto& pool = LayeredMemoryPool::instance();
-    if (!pool.is_initialized() && !pool.initialize(config.memory_pool_config)) {
-        std::cerr << "Failed to initialize memory pool." << std::endl;
-        return 1;
+        // 初始化全局内存池
+        auto& pool = LayeredMemoryPool::instance();
+        if (!pool.is_initialized() && !pool.initialize(config.memory_pool_config)) {
+            std::cerr << "Failed to initialize memory pool." << std::endl;
+            return 1;
+        }
+
+        // 注册到 roaring
+        pool.register_with_roaring();
+        std::cout << "  Registered memory pool with roaring" << std::endl;
     }
-
-    // 注册到 roaring
-    pool.register_with_roaring();
-    std::cout << "  Registered memory pool with roaring" << std::endl;
 
     try {
         // ========== Step 1: Read parquet file from S3 ==========
