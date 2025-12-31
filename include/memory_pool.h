@@ -4,35 +4,36 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <mutex>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "config.h"
 
 /**
- * DeferOp - RAII 延迟执行机制
+ * DeferOp - RAII 延迟执行机制（零分配 / 零类型擦除版本）
  * 在作用域结束时自动执行指定的操作
+ *
+ * 说明：
+ * - 旧版本使用 std::function 可能触发堆分配与类型擦除开销
+ * - 这里改为模板，直接存储 functor，通常可被编译器内联优化
  */
+template <typename F>
 class DeferOp {
 public:
-    template <typename F>
-    explicit DeferOp(F&& func) : func_(std::forward<F>(func)) {}
+    explicit DeferOp(F&& func) noexcept(std::is_nothrow_constructible_v<F, F&&>) : func_(std::forward<F>(func)) {}
 
-    ~DeferOp() {
-        if (func_) {
-            func_();
-        }
-    }
+    ~DeferOp() noexcept(noexcept(std::declval<F&>()())) { func_(); }
 
-    // 禁止拷贝和移动
+    // 禁止拷贝和移动（保持原语义）
     DeferOp(const DeferOp&) = delete;
     DeferOp& operator=(const DeferOp&) = delete;
     DeferOp(DeferOp&&) = delete;
     DeferOp& operator=(DeferOp&&) = delete;
 
 private:
-    std::function<void()> func_;
+    F func_;
 };
 
 extern "C" {
@@ -83,12 +84,13 @@ public:
         size_t large_allocations;
     };
 
-private:
+public:
     // 空闲块链表节点（在空闲时使用内存块本身存储，使用时被用户数据覆盖）
     struct FreeBlock {
         FreeBlock* next; // 8 字节指针，因此最小块必须 >= 8 字节
     };
 
+private:
     // 大块分配的头部信息
     struct LargeBlockHeader {
         size_t size; // 分配的大小（含头部）
@@ -132,6 +134,7 @@ private:
     std::atomic<size_t> large_allocations_;
 
     bool initialized_;
+    std::atomic<uint64_t> epoch_;
 
 public:
     LayeredMemoryPool();
@@ -224,6 +227,19 @@ public:
     void register_with_roaring();
 
 private:
+    // Localized template helpers: compile out logging code paths while keeping runtime toggle.
+    template <bool EnableLogging>
+    void* allocate_impl(size_t size);
+
+    template <bool EnableLogging>
+    void* reallocate_impl(void* ptr, size_t new_size);
+
+    template <bool EnableLogging>
+    void* callocate_impl(size_t count, size_t size);
+
+    template <bool EnableLogging>
+    void* allocate_aligned_impl(size_t alignment, size_t size);
+
     /**
      * 根据大小获取对应的层级索引
      * @return 层级索引，-1 表示需要使用大块区域
