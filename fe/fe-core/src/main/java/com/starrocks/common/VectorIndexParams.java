@@ -117,8 +117,8 @@ public class VectorIndexParams {
             public void check(String value) {
                 try {
                     double num = Double.parseDouble(value);
-                    if (num != 8) {
-                        throw new SemanticException(String.format("Value of `%s` must be 8", "NBITS"));
+                    if (num <= 0 || num > 32) {
+                        throw new SemanticException(String.format("Value of `%s` must be in range [1, 32]", "NBITS"));
                     }
                 } catch (NumberFormatException e) {
                     throw new SemanticException(String.format("Value of `%s` must be a integer", "NBITS"));

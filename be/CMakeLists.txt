@@ -554,6 +554,7 @@ if (${WITH_TENANN} STREQUAL "ON")
     set(STARROCKS_DEPENDENCIES
         ${STARROCKS_DEPENDENCIES}
         tenann
+        gomp
     )
 endif()
 
